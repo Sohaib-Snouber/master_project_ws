@@ -67,6 +67,10 @@ The following packages are used in this project, listed in their dependency orde
 
 2. **robot_moveit_config**: This package uses the previous package to set up the robot configuration in MoveIt using the MoveIt Setup Assistant, which generates this package. For more details, see [here](https://github.com/Sohaib-Snouber/master_project_ws/tree/main/src/robot_moveit_config).
 
+3. **mtc_tutorial**: This package contains tutorials and examples for using the MoveIt Task Constructor (MTC). These tutorials are helpful for learning how to plan and execute complex tasks with the robotic arm. For more details, see [here](https://github.com/Sohaib-Snouber/master_project_ws/tree/main/src/mtc_tutorial).
+
+4. **master_project_msgs**: This package contains the necessary message definitions used across the project. These messages help define tasks, stages, waypoints, and joint states within the project. For more details, see [here](https://github.com/Sohaib-Snouber/master_project_ws/tree/main/src/master_project_msgs).
+
 ## Running the Project
 Instructions for running the project will go here.
 
@@ -78,4 +82,3 @@ Contributions are welcome! Please fork this repository and submit pull requests.
 
 ## License
 This project is licensed under the Apache 2.0 License. See the [LICENSE](LICENSE) file for details.
-
