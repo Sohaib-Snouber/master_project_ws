@@ -71,6 +71,8 @@ The following packages are used in this project, listed in their dependency orde
 
 4. **master_project_msgs**: This package contains the necessary message definitions used across the project. These messages help define tasks, stages, waypoints, and joint states within the project. For more details, see [here](https://github.com/Sohaib-Snouber/master_project_ws/tree/main/src/master_project_msgs).
 
+5. **action_interfaces**: This package defines the action interfaces used for processing tasks within the project. It includes the `ProcessTask` action, which specifies the goal, feedback, and result messages for processing tasks. For more details, see [here](https://github.com/Sohaib-Snouber/master_project_ws/tree/main/src/action_interfaces).
+
 ## Running the Project
 Instructions for running the project will go here.
 
