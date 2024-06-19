@@ -1,5 +1,4 @@
 # Goal
-int32 order
 bool request_open_gripper
 bool request_close_gripper
 bool request_greeting
@@ -7,11 +6,8 @@ bool move_robot
 bool check_robot_status
 ---
 # Result
-int32[] sequence
 string greeting_message
 int32 goal_id
 ---
 # Feedback
-int32[] partial_sequence
-int32 current_count
 bool robot_moving
