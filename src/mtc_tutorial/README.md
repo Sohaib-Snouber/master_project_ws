@@ -3,6 +3,10 @@
 ## Overview
 The `mtc_tutorial` package demonstrates the use of the MoveIt Task Constructor (MTC) with ROS 2. This package includes example launch files and a C++ source file to help you get started with MTC.
 
+### Video Demonstration
+Watch the video demonstration of the `mtc_tutorial` package:
+
+[![MTC Tutorial](https://img.youtube.com/vi/XVEP0uzLiXo/0.jpg)](https://www.youtube.com/watch?v=XVEP0uzLiXo)
 
 ## Features
 - Demonstrates basic usage of MoveIt Task Constructor in ROS 2
