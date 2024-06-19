@@ -204,7 +204,7 @@
   
   This project includes code from the following third-party projects:
 
-  1. ur_rtde - BSD 3-Clause License
+  1. ur_rtde - MIT License
      - Used for real-time data exchange with the UR5e robot arm.
-     - Original project: https://sdurobotics.gitlab.io/ur_rtde/
-     - License: https://sdurobotics.gitlab.io/ur_rtde/license.html
+     - Original project: https://gitlab.com/sdurobotics/ur_rtde.git
+     - License: https://gitlab.com/sdurobotics/ur_rtde/-/blob/master/LICENSE?ref_type=heads
