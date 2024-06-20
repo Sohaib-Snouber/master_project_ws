@@ -60,3 +60,6 @@ The `Task` message structure is also used in other packages, such as the RTDE (R
 - **Stage**: Represents a single stage within a task, composed of multiple waypoints.
 - **Waypoint**: Represents a specific point within a stage, defined by the states of multiple joints.
 - **JointState**: Represents the state of an individual joint, including its name and position.
+
+## License
+This project is licensed under the Apache 2.0 License. See the [LICENSE](/LICENSE) file for details.
