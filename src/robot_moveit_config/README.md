@@ -2,7 +2,6 @@
 
 This repository contains the configuration files for the UR5e robot arm with a 2F-140 Robotiq gripper, generated using the MoveIt Setup Assistant. 
 
-
 ## Introduction
 
 This repository provides all necessary configuration files to control a UR5e robot arm equipped with a 2F-140 Robotiq gripper using MoveIt. These files were generated using the MoveIt Setup Assistant and include URDF, SRDF, kinematics, and controller configurations.
@@ -103,13 +102,10 @@ ros2 launch robot_moveit_config demo.launch.py
 
 This will start the MoveIt! RViz interface with the UR5e robot and the 2F-140 Robotiq gripper, allowing you to plan and execute motions.
 
-
 ## Acknowledgment
 
 This project was made possible thanks to the excellent tools and extensive development by the MoveIt community. The MoveIt Setup Assistant and the MoveIt framework have been instrumental in configuring and controlling the UR5e robot and the 2F-140 Robotiq gripper. We greatly appreciate their efforts and contributions to the robotics community.
 
-
 ## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache 2.0 License. See the [LICENSE](/LICENSE) file for details.
 
