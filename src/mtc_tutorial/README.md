@@ -76,7 +76,7 @@ export LC_NUMERIC=en_US.UTF-8
 ```
 
 ## License
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache 2.0 License. See the [LICENSE](/LICENSE) file for details.
 
 
 ## Acknowledgements
