@@ -73,11 +73,32 @@ The following packages are used in this project, listed in their dependency orde
 
 5. **action_interfaces**: This package defines the action interfaces used for processing tasks within the project. It includes the `ProcessTask` action, which specifies the goal, feedback, and result messages for processing tasks. For more details, see [here](https://github.com/Sohaib-Snouber/master_project_ws/tree/main/src/action_interfaces).
 
+6. **robot_driver**: Handles the core functionalities for controlling the UR5e robot and Robotiq gripper, including syncing poses, setting up the planning scene, executing tasks, and managing actions. For more details, see [here](https://github.com/Sohaib-Snouber/master_project_ws/tree/main/src/robot_driver).
+
 ## Running the Project
-Instructions for running the project will go here.
+### Launching the Nodes
+1. Launch RViz with the necessary components:
+   ```bash
+   ros2 launch mtc_tutorial mtc_demo.launch.py
+   ```
+
+2. Launch the `robot_driver` package nodes:
+   ```bash
+   ros2 launch robot_driver robot_driver.launch.py
+   ```
+   
+3. Run the Action Server Node:
+    ```bash
+    ros2 run robot_driver action_server_node
+    ```
+
+4. Run the Usage Node (client):
+    ```bash
+    ros2 run robot_driver usage_node
+    ```
 
 ## Common Issues
-Details about common issues and troubleshooting steps will go here.
+
 
 ## Contributing
 Contributions are welcome! Please fork this repository and submit pull requests.
