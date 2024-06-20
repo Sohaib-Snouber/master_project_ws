@@ -78,4 +78,4 @@ ros2 run robot_driver usage_node
 Ensure all dependencies are installed and sourced correctly before running the nodes.
 
 ## License
-This project is licensed under the Apache 2.0 License. See the [LICENSE](../LICENSE) file for details.
+This project is licensed under the Apache 2.0 License. See the [LICENSE](/LICENSE) file for details.
