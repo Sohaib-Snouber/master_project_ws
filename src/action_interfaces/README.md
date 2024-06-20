@@ -37,3 +37,6 @@ This action interface can be used to define servers and clients for processing t
 - **Result**: Contains the sequence of actions performed, a greeting message, and the goal ID.
 - **Feedback**: Provides robot movement status during task execution.
 
+## License
+This project is licensed under the Apache 2.0 License. See the [LICENSE](/LICENSE) file for details.
+
