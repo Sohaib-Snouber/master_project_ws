@@ -1,0 +1,14 @@
+# Goal
+geometry_msgs/PoseStamped pose
+bool move_robot
+bool request_open_gripper
+bool request_close_gripper
+bool check_robot_status
+bool request_greeting
+
+# Result
+int32 goal_id
+string greeting_message
+
+# Feedback
+# Define any feedback messages you need
