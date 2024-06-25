@@ -5,6 +5,7 @@ geometry_msgs/PoseStamped target_pose
 shape_msgs/SolidPrimitive object_primitive
 geometry_msgs/Pose object_pose
 std_msgs/ColorRGBA color
+# the 11 following actions, that the client would request from server 
 bool add_collision_object
 bool delete_collision_object
 bool attach_object

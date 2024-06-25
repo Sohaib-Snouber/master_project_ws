@@ -16,15 +16,16 @@ private:
 
     void executeActions() {
         if (!addCollisionObject()) return;
-        if (!moveTo()) return;
-        if (!moveLinear()) return;
+        if (!deleteObject()) return;
         if (!attachObject()) return;
         if (!detachObject()) return;
-        if (!deleteObject()) return;
+        if (!moveTo()) return;
+        if (!moveLinear()) return;
         if (!checkRobotStatus()) return;
         if (!allowCollision("hand", "target1")) return;
-        if (!allowCollision("target1", "table1")) return;
         if (!reenableCollision("target1", "table1")) return;
+        if (!currentState()) return;
+        if (!setGripper()) return;
 
         RCLCPP_INFO(this->get_logger(), "All actions completed successfully.");
     }
@@ -47,6 +48,16 @@ private:
         color.a = 1.0;
 
         return client_actions_->addCollisionObject("example_object", primitive, pose, color);
+    }
+    bool deleteObject() {
+        return client_actions_->deleteObject("example_object");
+    }
+    bool attachObject() {
+        return client_actions_->attachObject("example_object");
+    }
+
+    bool detachObject() {
+        return client_actions_->detachObject("example_object");
     }
 
     bool moveTo() {
@@ -71,18 +82,6 @@ private:
         return client_actions_->moveLinear(target_pose);
     }
 
-    bool attachObject() {
-        return client_actions_->attachObject("example_object");
-    }
-
-    bool detachObject() {
-        return client_actions_->detachObject("example_object");
-    }
-
-    bool deleteObject() {
-        return client_actions_->deleteObject("example_object");
-    }
-
     bool checkRobotStatus() {
         return client_actions_->checkRobotStatus();
     }
@@ -93,6 +92,15 @@ private:
 
     bool reenableCollision(const std::string &object1, const std::string &object2) {
         return client_actions_->reenableCollision(object1, object2);
+    }
+    bool currentState() {
+        return client_actions_->currentState();
+    }
+
+    bool setGripper() {
+        float finger_joint_position;
+        finger_joint_position = 0.7;
+        return client_actions_->setGripper(finger_joint_position);
     }
 };
 
