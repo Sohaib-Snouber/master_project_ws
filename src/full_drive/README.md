@@ -86,7 +86,7 @@ string status
 
 2. **Launch the Main Nodes**:
     ```bash
-    ros2 launch full_drive main_launch.py
+    ros2 launch full_drive full_drive.launch.py
     ```
     - This launch file will start the `planning_scene_node` and `action_server_node`.
 
