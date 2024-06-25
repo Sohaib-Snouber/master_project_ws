@@ -11,6 +11,10 @@ find_package(ament_cmake REQUIRED)
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(shape_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+
 set(action_files
  "action/ProcessTask.action"
  "action/FullDrive.action"
@@ -18,6 +22,7 @@ set(action_files
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   ${action_files}
+  DEPENDENCIES geometry_msgs shape_msgs std_msgs
 )
 
 if(BUILD_TESTING)

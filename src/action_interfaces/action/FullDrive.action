@@ -1,14 +1,33 @@
-# Goal
-geometry_msgs/PoseStamped pose
-bool move_robot
-bool request_open_gripper
-bool request_close_gripper
+# FullDrive.action
+
+# Goal definition
+geometry_msgs/PoseStamped target_pose
+shape_msgs/SolidPrimitive object_primitive
+geometry_msgs/Pose object_pose
+std_msgs/ColorRGBA color
+bool add_collision_object
+bool delete_collision_object
+bool attach_object
+bool detach_object
+bool move_to
+bool move_linear
 bool check_robot_status
-bool request_greeting
+bool allow_collision
+bool reenable_collision
+bool current_state
+bool set_gripper_position
 
-# Result
-int32 goal_id
-string greeting_message
-
-# Feedback
-# Define any feedback messages you need
+float64 gripper_position
+string object_name
+string target_name  # the name of the link or object that will be allowed to colide with object_name
+string task
+string id
+string link # this link is used when attaching/detaching objects to it
+---
+# Result definition
+bool success
+string message
+---
+# Feedback definition
+float32 progress
+string status
