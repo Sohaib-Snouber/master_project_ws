@@ -17,7 +17,7 @@ public:
         this->client_ = rclcpp_action::create_client<FullDrive>(this, "full_drive");
     }
 
-    bool addCollisionObject(const std::string &object_name, const shape_msgs::msg::SolidPrimitive &primitive,
+    bool addCollisionObject(const std::string &target_name, const shape_msgs::msg::SolidPrimitive &primitive,
                             const geometry_msgs::msg::Pose &pose, const std_msgs::msg::ColorRGBA &color) {
         if (!this->client_->wait_for_action_server()) {
             RCLCPP_ERROR(this->get_logger(), "Action server not available after waiting");
@@ -25,7 +25,7 @@ public:
         }
 
         auto goal_msg = FullDrive::Goal();
-        goal_msg.object_name = object_name;
+        goal_msg.target_name = target_name;
         goal_msg.object_primitive = primitive;
         goal_msg.object_pose = pose;
         goal_msg.color = color;
@@ -45,14 +45,14 @@ public:
         return sendGoal(goal_msg);
     }
     
-    bool deleteObject(const std::string &object_name) {
+    bool deleteObject(const std::string &target_name) {
         if (!this->client_->wait_for_action_server()) {
             RCLCPP_ERROR(this->get_logger(), "Action server not available after waiting");
             return false;
         }
 
         auto goal_msg = FullDrive::Goal();
-        goal_msg.object_name = object_name;
+        goal_msg.target_name = target_name;
 
         goal_msg.add_collision_object = false;
         goal_msg.delete_collision_object = true;
@@ -69,14 +69,14 @@ public:
         return sendGoal(goal_msg);
     }
 
-    bool attachObject(const std::string &object_name) {
+    bool attachObject(const std::string &target_name) {
         if (!this->client_->wait_for_action_server()) {
             RCLCPP_ERROR(this->get_logger(), "Action server not available after waiting");
             return false;
         }
 
         auto goal_msg = FullDrive::Goal();
-        goal_msg.object_name = object_name;
+        goal_msg.target_name = target_name;
 
         goal_msg.add_collision_object = false;
         goal_msg.delete_collision_object = false;
@@ -93,14 +93,14 @@ public:
         return sendGoal(goal_msg);
     }
 
-    bool detachObject(const std::string &object_name) {
+    bool detachObject(const std::string &target_name) {
         if (!this->client_->wait_for_action_server()) {
             RCLCPP_ERROR(this->get_logger(), "Action server not available after waiting");
             return false;
         }
 
         auto goal_msg = FullDrive::Goal();
-        goal_msg.object_name = object_name;
+        goal_msg.target_name = target_name;
 
         goal_msg.add_collision_object = false;
         goal_msg.delete_collision_object = false;
@@ -195,8 +195,8 @@ public:
         }
 
         auto goal_msg = FullDrive::Goal();
-        goal_msg.object_name = object1;
-        goal_msg.target_name = object2;
+        goal_msg.target_name = object1;
+        goal_msg.object_name = object2;
         
         goal_msg.add_collision_object = false;
         goal_msg.delete_collision_object = false;
@@ -220,8 +220,8 @@ public:
         }
 
         auto goal_msg = FullDrive::Goal();
-        goal_msg.object_name = object1;
-        goal_msg.target_name = object2;
+        goal_msg.target_name = object1;
+        goal_msg.object_name = object2;
         
         goal_msg.add_collision_object = false;
         goal_msg.delete_collision_object = false;

@@ -1,0 +1,14 @@
+# Request
+string function_name  # Name of the function to call
+string name           # Common parameter
+string group          # Common parameter
+geometry_msgs/PoseStamped target  # Used by createMoveToStage, createMoveLinearStage
+float64 gripper_position           # Used by createGripperStage
+string target_object              # Used by createAttachObjectStage, createDetachObjectStage
+string link                       # Used by createAttachObjectStage, createDetachObjectStage
+string[] objects                  # Used by createAllowCollisionStage
+bool allow                        # Used by createAllowCollisionStage
+---
+# Response
+bool success
+string message

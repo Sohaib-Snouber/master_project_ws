@@ -10,11 +10,14 @@
 #include <string>
 #include <vector>
 #include <moveit_msgs/msg/object_color.hpp>
+#include <algorithm>
 
 class PlanningSceneUpdater {
 public:
     PlanningSceneUpdater(const rclcpp::Node::SharedPtr& node)
-        : node_(node), planning_scene_interface_() {}
+        : node_(node), planning_scene_interface_() {
+        RCLCPP_INFO(node_->get_logger(), "Initialized the PlanningSceneUpdater class");
+    }
 
     void addCollisionObject(const std::string& id, const shape_msgs::msg::SolidPrimitive& primitive, const geometry_msgs::msg::Pose& pose, const std_msgs::msg::ColorRGBA& color) {
         moveit_msgs::msg::CollisionObject collision_object;
@@ -40,10 +43,29 @@ public:
     }
 
     void removeCollisionObject(const std::string& id) {
+        // Check if the object exists in the planning scene
+        auto existing_objects = planning_scene_interface_.getKnownObjectNames();
+        if (std::find(existing_objects.begin(), existing_objects.end(), id) == existing_objects.end()) {
+            RCLCPP_WARN(node_->get_logger(), "Object ID %s does not exist in the planning scene.", id.c_str());
+            return;
+        }
+
         std::vector<std::string> object_ids;
         object_ids.push_back(id);
+        
+        // Log the objects to be removed
+        RCLCPP_INFO(node_->get_logger(), "Removing collision object: %s", id.c_str());
+        
+        // Perform the removal
         planning_scene_interface_.removeCollisionObjects(object_ids);
-        RCLCPP_INFO(node_->get_logger(), "Removed collision object: %s", id.c_str());
+        
+        // Confirm removal
+        existing_objects = planning_scene_interface_.getKnownObjectNames();
+        if (std::find(existing_objects.begin(), existing_objects.end(), id) == existing_objects.end()) {
+            RCLCPP_INFO(node_->get_logger(), "Successfully removed collision object: %s", id.c_str());
+        } else {
+            RCLCPP_ERROR(node_->get_logger(), "Failed to remove collision object: %s", id.c_str());
+        }
     }
 
 private:
@@ -51,8 +73,6 @@ private:
         moveit_msgs::msg::ObjectColor object_color;
         object_color.id = id;
         object_color.color = color;
-        
-
         RCLCPP_INFO(node_->get_logger(), "Added color for object: %s", id.c_str());
         return object_color;
     }

@@ -76,6 +76,11 @@ private:
         if (!update_gripper_position()) {
             print_relaunch_message();
         }
+        // Stop the timer if synchronization is successful
+        if (success_) {
+            RCLCPP_INFO(this->get_logger(), "Synchronization successful. Stopping the node.");
+            rclcpp::shutdown(); // Shutdown the node
+        }
     }
 
     bool update_gripper_position() {
