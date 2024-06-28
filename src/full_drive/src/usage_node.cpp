@@ -5,6 +5,7 @@
 #include <std_msgs/msg/color_rgba.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <functional>
 
 
 class ClientNode : public rclcpp::Node {
@@ -16,6 +17,18 @@ public:
 
 private:
     std::shared_ptr<ClientActions> client_actions_;
+    const int max_attempts = 5;
+
+    bool tryAction(std::function<bool()> action, const std::string& action_name) {
+        for (int attempt = 0; attempt < max_attempts; ++attempt) {
+            if (action()) {
+                return true;
+            }
+            RCLCPP_WARN(this->get_logger(), "Attempt %d of %d for %s failed. Retrying...", attempt + 1, max_attempts, action_name.c_str());
+        }
+        RCLCPP_ERROR(this->get_logger(), "All %d attempts for %s failed.", max_attempts, action_name.c_str());
+        return false;
+    }
 
     void executeActions() {
         tf2::Quaternion q1;
@@ -26,35 +39,78 @@ private:
         tf2::Quaternion q3 = q2 * tf2::Quaternion(tf2::Vector3(0, 0, 1), M_PI_2);
         
         
-        //if (!addCollisionObject("example_object1", {0.1, 0.1, 0.1}, {0.5, 0.5, 0.5}, createColor(0.5, 0.5, 0.5, 1.0))) return;
-        //if (!addCollisionObject("example_object2", {0.2, 0.2, 0.2}, {0.7, 0.5, 0.5}, createColor(0.8, 0.2, 0.2, 1.0))) return;
+        //if (!addCollisionObject("box_object", shape_msgs::msg::SolidPrimitive::BOX, {0.1, 0.1, 0.1}, {0.5, 0.5, 0.5}, createColor(0.5, 0.5, 0.5, 1.0))) return;
+        if (!tryAction([&]() { 
+            return addCollisionObject("cylinder_object1", shape_msgs::msg::SolidPrimitive::CYLINDER, {0.015, 0.025/2.0}, {0.37, 0.32, 0.008}, createColor(0.8, 0.2, 0.2, 1.0));
+        }, "addCollisionObject(cylinder_object1)")) return;
+        //if (!addCollisionObject("cylinder_object1", shape_msgs::msg::SolidPrimitive::CYLINDER, {0.015, 0.025}, {0.37, 0.32, 0.008}, createColor(0.8, 0.2, 0.2, 1.0))) return;
+
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        //if (!deleteObject("example_object2")) return;
-        //if (!attachObject()) return;
-        //if (!detachObject()) return;
-        //if (!currentState()) return;
+
+        if (!tryAction([&]() { return moveTo(createTargetPose(0.37, 0.32, 0.008 + 0.20 + 0.15, q1)); }, "moveTo")) return;
+        if (!tryAction([&]() { return checkRobotStatus(); }, "checkRobotStatus")) return;
+
+        if (!tryAction([&]() { return setGripper(0.35); }, "setGripper")) return;
+        if (!tryAction([&]() { return checkRobotStatus(); }, "checkRobotStatus")) return;
+
+        if (!tryAction([&]() { return moveLinear(createTargetPose(0.37, 0.32, 0.21 + 0.008, q1)); }, "moveLinear")) return;
+        if (!tryAction([&]() { return checkRobotStatus(); }, "checkRobotStatus")) return;
+        
+        if (!tryAction([&]() { return allowCollision("hand", "cylinder_object1"); }, "allowCollision(hand, cylinder_object1)")) return;
+        if (!tryAction([&]() { return allowCollision("surface", "cylinder_object1"); }, "allowCollision(surface, cylinder_object1)")) return;
+
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        if (!moveTo(createTargetPose(0.5, 0.4, 0.6, q1))) return;
+
+        if (!tryAction([&]() { return setGripper(0.7); }, "setGripper")) return;
+        if (!tryAction([&]() { return checkRobotStatus(); }, "checkRobotStatus")) return;
+
+        if (!tryAction([&]() { return attachObject("cylinder_object1"); }, "attachObject(cylinder_object1)")) return;
+
         std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        if (!tryAction([&]() { return moveLinear(createTargetPose(0.37, 0.32, 0.2 + 0.008 + 0.15, q1)); }, "moveLinear")) return;
+        if (!tryAction([&]() { return checkRobotStatus(); }, "checkRobotStatus")) return;
+
+        /* if (!moveTo(createTargetPose(0.37, 0.32, 0.008 + 0.20 + 0.1, q1))) return;
         if (!checkRobotStatus()) return;
-        if (!moveTo(createTargetPose(0.5, 0.4, 0.3, q1))) return;
+
+        if (!moveLinear(createTargetPose(0.37, 0.32, 0.20 +0.008, q1))) return;
         if (!checkRobotStatus()) return;
-        if (!moveLinear(createTargetPose(0.5, 0.6, 0.3, q1))) return;
+        
+        if (!allowCollision("hand", "cylinder_object1")) return;
+        if (!allowCollision("surface", "cylinder_object1")) return;
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        if (!setGripper(0.7)) return;
         if (!checkRobotStatus()) return;
-        if (!moveLinear(createTargetPose(0.5, 0.2, 0.3, q1))) return;
-        if (!checkRobotStatus()) return;
-        if (!moveLinear(createTargetPose(0.5, 0.2, 0.6, q1))) return;
+
+        if (!attachObject("cylinder_object1")) return;
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        if (!moveLinear(createTargetPose(0.37, 0.32, 0.22+0.008+0.1, q1))) return;
+        if (!checkRobotStatus()) return; */
+
+        //if (!moveTo(createTargetPose(0.5, 0.4, 0.3, q1))) return;
+        //if (!checkRobotStatus()) return;
+        //if (!checkRobotStatus()) return;
+        //if (!moveLinear(createTargetPose(0.5, 0.2, 0.3, q1))) return;
+        //if (!checkRobotStatus()) return;
+        //if (!moveLinear(createTargetPose(0.5, 0.2, 0.6, q1))) return;
         //if (!checkRobotStatus()) return;
         //if (!allowCollision("hand", "target1")) return;
         //if (!reenableCollision("target1", "table1")) return;
         //if (!setGripper()) return;
+        //if (!deleteObject("example_object2")) return;
+        //if (!attachObject()) return;
+        //if (!detachObject()) return;
+        //if (!currentState()) return;
 
         RCLCPP_INFO(this->get_logger(), "All actions completed successfully.");
     }
 
-    bool addCollisionObject(const std::string &name, const std::vector<double> &dimensions, const std::vector<double> &position, const std_msgs::msg::ColorRGBA &color) {
+    bool addCollisionObject(const std::string &name, uint8_t shape_type, const std::vector<double> &dimensions, const std::vector<double> &position, const std_msgs::msg::ColorRGBA &color) {
         shape_msgs::msg::SolidPrimitive primitive;
-        primitive.type = primitive.BOX;
+        primitive.type = shape_type;
         primitive.dimensions.assign(dimensions.begin(), dimensions.end());
 
         geometry_msgs::msg::Pose pose;
@@ -69,12 +125,12 @@ private:
     bool deleteObject(const std::string &name) {
         return client_actions_->deleteObject(name);
     }
-    bool attachObject() {
-        return client_actions_->attachObject("example_object");
+    bool attachObject(const std::string &name) {
+        return client_actions_->attachObject(name);
     }
 
-    bool detachObject() {
-        return client_actions_->detachObject("example_object");
+    bool detachObject(const std::string &name) {
+        return client_actions_->detachObject(name);
     }
 
     bool moveTo(const geometry_msgs::msg::PoseStamped& target_pose) {
@@ -100,11 +156,10 @@ private:
         return client_actions_->currentState();
     }
 
-    bool setGripper() {
-        float finger_joint_position;
-        finger_joint_position = 0.7;
+    bool setGripper(float finger_joint_position) {
         return client_actions_->setGripper(finger_joint_position);
     }
+
     std_msgs::msg::ColorRGBA createColor(float r, float g, float b, float a) {
         std_msgs::msg::ColorRGBA color;
         color.r = r;

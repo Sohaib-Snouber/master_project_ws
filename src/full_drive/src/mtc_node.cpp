@@ -146,18 +146,48 @@ void MTCNode::createMoveToStage(const std::string& name, const std::string& grou
     task_->setProperty("ik_frame", hand_frame);
 
     auto sampling_planner = std::make_shared<mtc::solvers::PipelinePlanner>(shared_from_this());
+    sampling_planner->setPlannerId("RRTConnectkConfigDefault");
+    sampling_planner->setProperty("max_step", 0.01);
+
     auto cartesian_planner = std::make_shared<mtc::solvers::CartesianPath>();
     cartesian_planner->setMaxVelocityScalingFactor(1.0);
     cartesian_planner->setMaxAccelerationScalingFactor(1.0);
-    cartesian_planner->setStepSize(.01);
+    cartesian_planner->setStepSize(.001);
 
     // Current state
     auto stage_state_current = std::make_unique<mtc::stages::CurrentState>("current");
     task_->add(std::move(stage_state_current));        
     
+    /* // Define avoidance region constraint
+    moveit_msgs::msg::Constraints path_constraints;
+
+    moveit_msgs::msg::PositionConstraint position_constraint;
+    position_constraint.header.frame_id = "base_link"; // Reference frame
+
+    // Define the forbidden region (bounding box dimensions and position)
+    shape_msgs::msg::SolidPrimitive forbidden_box;
+    forbidden_box.type = shape_msgs::msg::SolidPrimitive::BOX;
+    forbidden_box.dimensions.resize(3);
+    forbidden_box.dimensions[0] = 0.1; // X-axis length (adjust as needed)
+    forbidden_box.dimensions[1] = 0.1; // Y-axis width (adjust as needed)
+    forbidden_box.dimensions[2] = 0.2; // Z-axis height (adjust as needed)
+
+    // Define the pose of the forbidden box center
+    geometry_msgs::msg::Pose box_pose;
+    box_pose.position.x = target.pose.position.x; // Adjust as needed
+    box_pose.position.y = target.pose.position.y; // Adjust as needed
+    box_pose.position.z = target.pose.position.z; // Adjust as needed
+    box_pose.orientation = target.pose.orientation;
+
+    position_constraint.constraint_region.primitives.push_back(forbidden_box);
+    position_constraint.constraint_region.primitive_poses.push_back(box_pose);
+    position_constraint.weight = 1.0;
+    path_constraints.position_constraints.push_back(position_constraint); */
+
     auto move_to_stage = std::make_unique<mtc::stages::MoveTo>(name, sampling_planner);
     move_to_stage->setGroup(group);
     move_to_stage->setGoal(target);
+    //move_to_stage->setPathConstraints(path_constraints); // Set path constraints
     task_->add(std::move(move_to_stage));
 }
 /* void createMoveToStage(const std::string& name, const std::string& group, const geometry_msgs::msg::PoseStamped& target) {
@@ -190,11 +220,12 @@ void MTCNode::createMoveLinearStage(const std::string& name, const std::string& 
     auto cartesian_planner = std::make_shared<mtc::solvers::CartesianPath>();
     cartesian_planner->setMaxVelocityScalingFactor(1.0);
     cartesian_planner->setMaxAccelerationScalingFactor(1.0);
-    cartesian_planner->setStepSize(.01);
+    cartesian_planner->setStepSize(.001);
 
     // Current state
     auto stage_state_current = std::make_unique<mtc::stages::CurrentState>("current");
-    task_->add(std::move(stage_state_current));        
+    task_->add(std::move(stage_state_current));   
+
     auto move_linear_stage = std::make_unique<mtc::stages::MoveTo>(name, cartesian_planner);
     move_linear_stage->setGroup(group);
     move_linear_stage->setGoal(target);
@@ -202,7 +233,7 @@ void MTCNode::createMoveLinearStage(const std::string& name, const std::string& 
 }
 
 void MTCNode::createGripperStage(const std::string& name, const std::string& group, double gripper_position) {
-RCLCPP_INFO(this->get_logger(), "Service message is processing");
+    RCLCPP_INFO(this->get_logger(), "Service message is processing");
 
     task_->loadRobotModel(shared_from_this());
     task_->stages()->setName("demo task");
@@ -220,7 +251,7 @@ RCLCPP_INFO(this->get_logger(), "Service message is processing");
     auto cartesian_planner = std::make_shared<mtc::solvers::CartesianPath>();
     cartesian_planner->setMaxVelocityScalingFactor(1.0);
     cartesian_planner->setMaxAccelerationScalingFactor(1.0);
-    cartesian_planner->setStepSize(.01);
+    cartesian_planner->setStepSize(.001);
 
     // Current state
     auto stage_state_current = std::make_unique<mtc::stages::CurrentState>("current");
@@ -237,26 +268,100 @@ RCLCPP_INFO(this->get_logger(), "Service message is processing");
 }
 
 void MTCNode::createAttachObjectStage(const std::string& name, const std::string& target_object, const std::string& link) {
-    task_->setRobotModel(robot_model_);  // Set the robot model for the task
-    //auto [sampling_planner, cartesian_planner, arm_group_name, hand_group_name] = initializeStage();
+    RCLCPP_INFO(this->get_logger(), "Service message is processing");
+
+    task_->loadRobotModel(shared_from_this());
+    task_->stages()->setName("demo task");
+
+    const auto& arm_group_name = "ur5e_arm";
+    const auto& hand_group_name = "gripper";
+    const auto& hand_frame = "flange";
+
+    // Set task properties
+    task_->setProperty("group", arm_group_name);
+    task_->setProperty("eef", hand_group_name);
+    task_->setProperty("ik_frame", hand_frame);
+
+    auto sampling_planner = std::make_shared<mtc::solvers::PipelinePlanner>(shared_from_this());
+    auto cartesian_planner = std::make_shared<mtc::solvers::CartesianPath>();
+    cartesian_planner->setMaxVelocityScalingFactor(1.0);
+    cartesian_planner->setMaxAccelerationScalingFactor(1.0);
+    cartesian_planner->setStepSize(.001);
+
+    // Current state
+    auto stage_state_current = std::make_unique<mtc::stages::CurrentState>("current");
+    task_->add(std::move(stage_state_current)); 
+
     auto attach_stage = std::make_unique<mtc::stages::ModifyPlanningScene>(name);
-    attach_stage->attachObject(target_object, link);
+    attach_stage->attachObject(target_object, hand_frame);
     task_->add(std::move(attach_stage));
 }
 
 void MTCNode::createDetachObjectStage(const std::string& name, const std::string& target_object, const std::string& link) {
-    task_->setRobotModel(robot_model_);  // Set the robot model for the task
-    //auto [sampling_planner, cartesian_planner, arm_group_name, hand_group_name] = initializeStage();
+    RCLCPP_INFO(this->get_logger(), "Service message is processing");
+
+    task_->loadRobotModel(shared_from_this());
+    task_->stages()->setName("demo task");
+
+    const auto& arm_group_name = "ur5e_arm";
+    const auto& hand_group_name = "gripper";
+    const auto& hand_frame = "flange";
+
+    // Set task properties
+    task_->setProperty("group", arm_group_name);
+    task_->setProperty("eef", hand_group_name);
+    task_->setProperty("ik_frame", hand_frame);
+
+    auto sampling_planner = std::make_shared<mtc::solvers::PipelinePlanner>(shared_from_this());
+    auto cartesian_planner = std::make_shared<mtc::solvers::CartesianPath>();
+    cartesian_planner->setMaxVelocityScalingFactor(1.0);
+    cartesian_planner->setMaxAccelerationScalingFactor(1.0);
+    cartesian_planner->setStepSize(.001);
+
+    // Current state
+    auto stage_state_current = std::make_unique<mtc::stages::CurrentState>("current");
+    task_->add(std::move(stage_state_current)); 
+
     auto detach_stage = std::make_unique<mtc::stages::ModifyPlanningScene>(name);
-    detach_stage->detachObject(target_object, link);
+    detach_stage->detachObject(target_object, hand_frame);
     task_->add(std::move(detach_stage));
 }
 
 void MTCNode::createAllowCollisionStage(const std::string& name, const std::string& target_object, const std::vector<std::string>& objects, bool allow) {
-    task_->setRobotModel(robot_model_);  // Set the robot model for the task
-    //auto [sampling_planner, cartesian_planner, arm_group_name, hand_group_name] = initializeStage();
+    RCLCPP_INFO(this->get_logger(), "Service message is processing");
+
+    task_->loadRobotModel(shared_from_this());
+    task_->stages()->setName("demo task");
+
+    const auto& arm_group_name = "ur5e_arm";
+    const auto& hand_group_name = "gripper";
+    const auto& hand_frame = "flange";
+
+    // Set task properties
+    task_->setProperty("group", arm_group_name);
+    task_->setProperty("eef", hand_group_name);
+    task_->setProperty("ik_frame", hand_frame);
+
+    auto sampling_planner = std::make_shared<mtc::solvers::PipelinePlanner>(shared_from_this());
+    auto cartesian_planner = std::make_shared<mtc::solvers::CartesianPath>();
+    cartesian_planner->setMaxVelocityScalingFactor(1.0);
+    cartesian_planner->setMaxAccelerationScalingFactor(1.0);
+    cartesian_planner->setStepSize(.001);
+
+    // Current state
+    auto stage_state_current = std::make_unique<mtc::stages::CurrentState>("current");
+    task_->add(std::move(stage_state_current)); 
+
     auto allow_collision_stage = std::make_unique<mtc::stages::ModifyPlanningScene>(name);
-    allow_collision_stage->allowCollisions(target_object, objects, allow);
+    if (target_object == "hand"){
+        allow_collision_stage->allowCollisions(objects,
+                                   task_->getRobotModel()
+                                       ->getJointModelGroup(hand_group_name)
+                                       ->getLinkModelNamesWithCollisionGeometry(),
+                                   allow);
+    } else {
+        allow_collision_stage->allowCollisions(target_object, objects, allow);
+    }
     task_->add(std::move(allow_collision_stage));
 }
 

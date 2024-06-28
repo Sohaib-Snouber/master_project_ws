@@ -138,46 +138,49 @@ private:
         std::thread{std::bind(&FullDriveActionServer::execute, this, std::placeholders::_1), goal_handle}.detach();
     }
 
-    void execute(const std::shared_ptr<GoalHandleFullDrive> goal_handle) {
+    bool execute(const std::shared_ptr<GoalHandleFullDrive> goal_handle) {
         const auto goal = goal_handle->get_goal();
         auto result = std::make_shared<FullDrive::Result>();
-
+        bool success = false;
+        
         if (goal->add_collision_object) {
             if (object_map_.find(goal->target_name) != object_map_.end()) {
                 RCLCPP_ERROR(this->get_logger(), "Collision object already exists: %s", goal->target_name.c_str());
                 result->success = false;
                 result->message = "Collision object already exists.";
                 goal_handle->abort(result);
-                return;
+                return false;
             }
 
             RCLCPP_INFO(this->get_logger(), "Adding collision object");
             planning_scene_updater_->addCollisionObject(goal->target_name, goal->object_primitive, goal->object_pose, goal->color);
             object_map_[goal->target_name] = {true, false, {}};
+            success = true;
         } else if (goal->delete_collision_object) {
             if (object_map_.find(goal->target_name) == object_map_.end()) {
                 RCLCPP_ERROR(this->get_logger(), "Collision object does not exist: %s", goal->target_name.c_str());
                 result->success = false;
                 result->message = "Collision object does not exist.";
                 goal_handle->abort(result);
-                return;
+                return false;
             }
 
             RCLCPP_INFO(this->get_logger(), "Deleting collision object");
             planning_scene_updater_->removeCollisionObject(goal->target_name);
             object_map_.erase(goal->target_name);
+            success = true;
         } else if (goal->attach_object) {
             if (object_map_.find(goal->target_name) == object_map_.end() || !object_map_[goal->target_name].exists) {
                 RCLCPP_ERROR(this->get_logger(), "Object does not exist: %s", goal->target_name.c_str());
                 result->success = false;
                 result->message = "Object does not exist.";
                 goal_handle->abort(result);
-                return;
+                return false;
             }
 
             RCLCPP_INFO(this->get_logger(), "Attaching object");
-            callMoveitService("createAttachObjectStage", goal->target_name, "", "", geometry_msgs::msg::PoseStamped(), goal->link, 0.0, {}, true);
-            result->success = true;
+            success = callMoveitService("createAttachObjectStage", goal->target_name, "", "", geometry_msgs::msg::PoseStamped(), goal->link, 0.0, {}, true);
+            result->success = success;
             /* mtc_->createAttachObjectStage("attach_object", goal->target_name, goal->link);
             if (!mtc_->planAndExecute()) {
                 RCLCPP_ERROR(this->get_logger(), "Attach object failed");
@@ -193,12 +196,12 @@ private:
                 result->success = false;
                 result->message = "Object does not exist.";
                 goal_handle->abort(result);
-                return;
+                return false;
             }
 
             RCLCPP_INFO(this->get_logger(), "Detaching object");
-            callMoveitService("createDetachObjectStage", goal->target_name, "", "", geometry_msgs::msg::PoseStamped(), goal->link, 0.0, {}, true);
-            result->success = true;
+            success = callMoveitService("createDetachObjectStage", goal->target_name, "", "", geometry_msgs::msg::PoseStamped(), goal->link, 0.0, {}, true);
+            result->success = success;
             /* mtc_->createDetachObjectStage("detach_object", goal->target_name, goal->link);
             if (!mtc_->planAndExecute()) {
                 RCLCPP_ERROR(this->get_logger(), "Detach object failed");
@@ -210,8 +213,8 @@ private:
             object_map_[goal->target_name].exists = false; */
         } else if (goal->move_to) {
             RCLCPP_INFO(this->get_logger(), "Moving to pose");
-            callMoveitService("createMoveToStage", "move_to", "ur5e_arm", "", goal->target_pose, "", 0.0, {}, true);
-            result->success = true;
+            success = callMoveitService("createMoveToStage", "move_to", "ur5e_arm", "", goal->target_pose, "", 0.0, {}, true);
+            result->success = success;
             /* mtc_->createMoveToStage("move_to", "ur5e_arm", goal->target_pose);
             if (!mtc_->planAndExecute()) {
                 RCLCPP_ERROR(this->get_logger(), "Move to pose failed");
@@ -224,8 +227,8 @@ private:
             } */
         } else if (goal->move_linear) {
             RCLCPP_INFO(this->get_logger(), "Moving linearly to pose");
-            callMoveitService("createMoveLinearStage", "move_linear", "ur5e_arm", "", goal->target_pose, "", 0.0, {}, true);
-            result->success = true;
+            success = callMoveitService("createMoveLinearStage", "move_linear", "ur5e_arm", "", goal->target_pose, "", 0.0, {}, true);
+            result->success = success;
             /* mtc_->createMoveLinearStage("move_linear", "ur5e_arm", goal->target_pose);
             if (!mtc_->planAndExecute()) {
                 RCLCPP_ERROR(this->get_logger(), "Move linear failed");
@@ -237,19 +240,19 @@ private:
                 processTask(task_);
             } */
         } else if (goal->check_robot_status) {
-            checkRobotStatus(goal_handle, result);
+            success = checkRobotStatus(goal_handle, result);
         } else if (goal->allow_collision) {
-            if (object_map_.find(goal->target_name) == object_map_.end()) {
+            if (goal->target_name != "hand" && object_map_.find(goal->target_name) == object_map_.end()) {
                 RCLCPP_ERROR(this->get_logger(), "Object does not exist: %s", goal->target_name.c_str());
                 result->success = false;
                 result->message = "Object does not exist.";
                 goal_handle->abort(result);
-                return;
+                return false;
             }
 
             RCLCPP_INFO(this->get_logger(), "Allowing collision");
-            callMoveitService("createAllowCollisionStage", goal->target_name, "", "", geometry_msgs::msg::PoseStamped(), "", 0.0, {goal->object_name}, true);
-            result->success = true;
+            success = callMoveitService("createAllowCollisionStage", goal->target_name, "", "", geometry_msgs::msg::PoseStamped(), "", 0.0, {goal->object_name}, true);
+            result->success = success;
             /* mtc_->createAllowCollisionStage("allow_collision", goal->target_name, {goal->object_name}, true);
             if (!mtc_->planAndExecute()) {
                 RCLCPP_ERROR(this->get_logger(), "Allow collision failed");
@@ -265,12 +268,12 @@ private:
                 result->success = false;
                 result->message = "Object does not exist.";
                 goal_handle->abort(result);
-                return;
+                return false;
             }
 
             RCLCPP_INFO(this->get_logger(), "Re-enabling collision");
-            callMoveitService("createAllowCollisionStage", goal->target_name, "", "", geometry_msgs::msg::PoseStamped(), "", 0.0, {goal->object_name}, false);
-            result->success = true;
+            success = callMoveitService("createAllowCollisionStage", goal->target_name, "", "", geometry_msgs::msg::PoseStamped(), "", 0.0, {goal->object_name}, false);
+            result->success = success;
             /* mtc_->createAllowCollisionStage("reenable_collision", goal->target_name, {goal->object_name}, false);
             if (!mtc_->planAndExecute()) {
                 RCLCPP_ERROR(this->get_logger(), "Re-enable collision failed");
@@ -294,8 +297,8 @@ private:
             } */
         } else if (goal->set_gripper_position) {
             RCLCPP_INFO(this->get_logger(), "Setting gripper to position: %f", goal->gripper_position);
-            callMoveitService("createGripperStage", "set_gripper", "gripper", "", geometry_msgs::msg::PoseStamped(), "", goal->gripper_position, {}, true);
-            result->success = true;
+            success = callMoveitService("createGripperStage", "set_gripper", "gripper", "", geometry_msgs::msg::PoseStamped(), "", goal->gripper_position, {}, true);
+            result->success = success;
             /* mtc_->createGripperStage("set_gripper", "gripper", goal->gripper_position);
             if (!mtc_->planAndExecute()) {
                 RCLCPP_ERROR(this->get_logger(), "Set gripper position failed");
@@ -308,12 +311,17 @@ private:
             } */
         }
         
-        if (rclcpp::ok()) {
+        // Set the result and return
+        if (success) {
             goal_handle->succeed(result);
             RCLCPP_INFO(this->get_logger(), "Goal succeeded");
+        } else {
+            goal_handle->abort(result);
         }
+
+        return success;
     }
-    void callMoveitService(const std::string& function_name, 
+    bool callMoveitService(const std::string& function_name, 
                         const std::string& name, 
                         const std::string& group, 
                         const std::string& target_object, 
@@ -336,7 +344,7 @@ private:
         while (!moveit_client_->wait_for_service(std::chrono::seconds(1))) {
             if (!rclcpp::ok()) {
                 RCLCPP_ERROR(this->get_logger(), "Interrupted while waiting for the service. Exiting.");
-                return;
+                return false;
             }
             RCLCPP_INFO(this->get_logger(), "Service not available, waiting again...");
         }
@@ -352,33 +360,35 @@ private:
             if (response->success) {
                 RCLCPP_INFO(this->get_logger(), "Service call successful");
                 processTask(task_);
+                return true;
             } else {
                 RCLCPP_ERROR(this->get_logger(), "Service call failed: %s", response->message.c_str());
+                return false;
             }
         } catch (const std::exception& e) {
             RCLCPP_ERROR(this->get_logger(), "Service call failed: %s", e.what());
+            return false;
         }
-
-        RCLCPP_INFO(this->get_logger(), "service is completed");
     }
 
-    void checkRobotStatus(const std::shared_ptr<GoalHandleFullDrive> goal_handle, std::shared_ptr<FullDrive::Result> result) {
+    bool checkRobotStatus(const std::shared_ptr<GoalHandleFullDrive> goal_handle, std::shared_ptr<FullDrive::Result> result) {
         RCLCPP_INFO(this->get_logger(), "Checking robot status...");
         while (isRobotMoving()) {
             if (goal_handle->is_canceling()) {
                 goal_handle->canceled(result);
                 RCLCPP_INFO(this->get_logger(), "Goal canceled while checking robot status");
-                return;
+                return false;
             }
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
         RCLCPP_INFO(this->get_logger(), "Robot has stopped moving.");
         std::this_thread::sleep_for(std::chrono::seconds(1));
+        return true;
     }
 
     bool isRobotMoving() {
         int checks = 5;
-        double tolerance = 1e-4;
+        double tolerance = 0.5e-4;
 
         for (int i = 0; i < checks; ++i) {
             auto target_q = rtde_receive_->getTargetQ();
@@ -433,6 +443,12 @@ private:
             double final_gripper_position = -1;
             double finger_change = 0.1;
 
+            // Define speed and acceleration parameters
+            double base_speed = 1.0; // Base speed for the robot
+            double base_acceleration = 1.2; // Base acceleration for the robot
+            double tolerance = 0.05;
+            size_t deceleration_points = 10; // Number of points to apply deceleration
+
             for (size_t i = 0; i < stage.waypoints.size(); ++i) {
                 const auto& waypoint = stage.waypoints[i];
                 std::vector<double> joint_positions(6, 0.0);
@@ -453,10 +469,30 @@ private:
                 }
 
                 std::vector<double> one_pos(joint_positions.begin(), joint_positions.end());
-                one_pos.push_back(1.0);
-                one_pos.push_back(1.2);
-                one_pos.push_back(0.01);
+                
+                double speed = base_speed;
+                double acceleration = base_acceleration;
+
+                // Apply deceleration over the last few points
+                if (i >= stage.waypoints.size() - deceleration_points) {
+                    size_t decel_index = i - (stage.waypoints.size() - deceleration_points);
+                    double factor = 1.0 - static_cast<double>(decel_index) / deceleration_points;
+                    speed *= factor;
+                    acceleration *= factor;
+                }
+
+                one_pos.push_back(speed);
+                one_pos.push_back(acceleration);
+                one_pos.push_back(tolerance); // Assuming this is a fixed value for something else
+
                 robot_path.push_back(one_pos);
+
+                // Ensure the robot is at the final point by adding extra points
+                if (i == stage.waypoints.size() - 1) {
+                    for (size_t j = 0; j < 5; j++) {
+                        robot_path.push_back(one_pos);
+                    }
+                }
             }
 
             RCLCPP_INFO(this->get_logger(), "Initial gripper position: %f", initial_gripper_position);
@@ -471,7 +507,10 @@ private:
             } else {
                 rtde_control_->moveJ(robot_path, true);
             }
-
+            // Wait until the robot has stopped moving
+            while (isRobotMoving()) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
         std::this_thread::sleep_for(std::chrono::seconds(1));
