@@ -68,7 +68,8 @@ public:
             // Initialize the MTC service client
             moveit_client_ = this->create_client<service_interfaces::srv::MoveitService>("moveit_service");
             RCLCPP_INFO(this->get_logger(), "Initialized the Moveit service client");
-
+            
+            loadExistingCollisionObjects();
             initialization_timer_->cancel(); // Cancel the timer after initialization
         };
         // Use a timer to defer the callback
@@ -90,9 +91,22 @@ private:
     std::unordered_map<std::string, ObjectProperties> object_map_;
     rclcpp::TimerBase::SharedPtr initialization_timer_;  // Store the timer to prevent it from being destroyed
     rclcpp::Client<service_interfaces::srv::MoveitService>::SharedPtr moveit_client_;
+    moveit::planning_interface::PlanningSceneInterface planning_scene_interface_;  // Add this line
 
     /* // example of Adding an object to the map
     object_map_["object1"] = {true, false, {"object2", "object3"}}; */
+
+    void loadExistingCollisionObjects() {
+        auto collision_objects = planning_scene_interface_.getObjects();
+
+        for (const auto& object_pair : collision_objects) {
+            const std::string& object_id = object_pair.first;
+            RCLCPP_INFO(this->get_logger(), "Found existing collision object: %s", object_id.c_str());
+            object_map_[object_id] = {true, false, {}};
+        }
+
+        RCLCPP_INFO(this->get_logger(), "Loaded %zu existing collision objects into object_map_", object_map_.size());
+    }
 
     void taskDetailsCallback(const master_project_msgs::msg::Task::SharedPtr msg) {
         RCLCPP_INFO(this->get_logger(), "Received task details: %s", msg->name.c_str());
@@ -123,6 +137,7 @@ private:
         std::cout << "task: " << goal->task << std::endl;
         std::cout << "id: " << goal->id << std::endl;
         std::cout << "link: " << goal->link << std::endl;
+        std::cout << "constrain: " << goal->constrain << std::endl;
 
         return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE; 
     }
@@ -179,7 +194,7 @@ private:
             }
 
             RCLCPP_INFO(this->get_logger(), "Attaching object");
-            success = callMoveitService("createAttachObjectStage", goal->target_name, "", "", geometry_msgs::msg::PoseStamped(), goal->link, 0.0, {}, true);
+            success = callMoveitService("createAttachObjectStage", goal->target_name, "", "", geometry_msgs::msg::PoseStamped(), goal->link, 0.0, {}, true, goal->constrain);
             result->success = success;
             /* mtc_->createAttachObjectStage("attach_object", goal->target_name, goal->link);
             if (!mtc_->planAndExecute()) {
@@ -200,7 +215,7 @@ private:
             }
 
             RCLCPP_INFO(this->get_logger(), "Detaching object");
-            success = callMoveitService("createDetachObjectStage", goal->target_name, "", "", geometry_msgs::msg::PoseStamped(), goal->link, 0.0, {}, true);
+            success = callMoveitService("createDetachObjectStage", goal->target_name, "", "", geometry_msgs::msg::PoseStamped(), goal->link, 0.0, {}, true, goal->constrain);
             result->success = success;
             /* mtc_->createDetachObjectStage("detach_object", goal->target_name, goal->link);
             if (!mtc_->planAndExecute()) {
@@ -213,7 +228,7 @@ private:
             object_map_[goal->target_name].exists = false; */
         } else if (goal->move_to) {
             RCLCPP_INFO(this->get_logger(), "Moving to pose");
-            success = callMoveitService("createMoveToStage", "move_to", "ur5e_arm", "", goal->target_pose, "", 0.0, {}, true);
+            success = callMoveitService("createMoveToStage", "move_to", "ur5e_arm", "", goal->target_pose, "", 0.0, {}, true, goal->constrain);
             result->success = success;
             /* mtc_->createMoveToStage("move_to", "ur5e_arm", goal->target_pose);
             if (!mtc_->planAndExecute()) {
@@ -227,7 +242,7 @@ private:
             } */
         } else if (goal->move_linear) {
             RCLCPP_INFO(this->get_logger(), "Moving linearly to pose");
-            success = callMoveitService("createMoveLinearStage", "move_linear", "ur5e_arm", "", goal->target_pose, "", 0.0, {}, true);
+            success = callMoveitService("createMoveLinearStage", "move_linear", "ur5e_arm", "", goal->target_pose, "", 0.0, {}, true, goal->constrain);
             result->success = success;
             /* mtc_->createMoveLinearStage("move_linear", "ur5e_arm", goal->target_pose);
             if (!mtc_->planAndExecute()) {
@@ -251,7 +266,7 @@ private:
             }
 
             RCLCPP_INFO(this->get_logger(), "Allowing collision");
-            success = callMoveitService("createAllowCollisionStage", goal->target_name, "", "", geometry_msgs::msg::PoseStamped(), "", 0.0, {goal->object_name}, true);
+            success = callMoveitService("createAllowCollisionStage", goal->target_name, "", "", geometry_msgs::msg::PoseStamped(), "", 0.0, {goal->object_name}, true, goal->constrain);
             result->success = success;
             /* mtc_->createAllowCollisionStage("allow_collision", goal->target_name, {goal->object_name}, true);
             if (!mtc_->planAndExecute()) {
@@ -263,7 +278,7 @@ private:
             }
             object_map_[goal->target_name].collision_allowed = true; */
         } else if (goal->reenable_collision) {
-            if (object_map_.find(goal->target_name) == object_map_.end()) {
+            if (goal->target_name != "hand" && goal->target_name != "base_link_inertia" && object_map_.find(goal->target_name) == object_map_.end()) {
                 RCLCPP_ERROR(this->get_logger(), "Object does not exist: %s", goal->target_name.c_str());
                 result->success = false;
                 result->message = "Object does not exist.";
@@ -272,7 +287,7 @@ private:
             }
 
             RCLCPP_INFO(this->get_logger(), "Re-enabling collision");
-            success = callMoveitService("createAllowCollisionStage", goal->target_name, "", "", geometry_msgs::msg::PoseStamped(), "", 0.0, {goal->object_name}, false);
+            success = callMoveitService("createAllowCollisionStage", goal->target_name, "", "", geometry_msgs::msg::PoseStamped(), "", 0.0, {goal->object_name}, false, goal->constrain);
             result->success = success;
             /* mtc_->createAllowCollisionStage("reenable_collision", goal->target_name, {goal->object_name}, false);
             if (!mtc_->planAndExecute()) {
@@ -297,7 +312,7 @@ private:
             } */
         } else if (goal->set_gripper_position) {
             RCLCPP_INFO(this->get_logger(), "Setting gripper to position: %f", goal->gripper_position);
-            success = callMoveitService("createGripperStage", "set_gripper", "gripper", "", geometry_msgs::msg::PoseStamped(), "", goal->gripper_position, {}, true);
+            success = callMoveitService("createGripperStage", "set_gripper", "gripper", "", geometry_msgs::msg::PoseStamped(), "", goal->gripper_position, {}, true, goal->constrain);
             result->success = success;
             /* mtc_->createGripperStage("set_gripper", "gripper", goal->gripper_position);
             if (!mtc_->planAndExecute()) {
@@ -329,7 +344,8 @@ private:
                         const std::string& link, 
                         double gripper_position, 
                         const std::vector<std::string>& objects, 
-                        bool allow) {
+                        bool allow,
+                        bool constrain) {
         auto request = std::make_shared<service_interfaces::srv::MoveitService::Request>();
         request->function_name = function_name;
         request->name = name;
@@ -340,6 +356,7 @@ private:
         request->gripper_position = gripper_position;
         request->objects = objects;
         request->allow = allow;
+        request->constrain = constrain;
         RCLCPP_INFO(this->get_logger(), "service message created");
         while (!moveit_client_->wait_for_service(std::chrono::seconds(1))) {
             if (!rclcpp::ok()) {
@@ -388,7 +405,7 @@ private:
 
     bool isRobotMoving() {
         int checks = 5;
-        double tolerance = 0.5e-4;
+        double tolerance = 0.4e-4;
 
         for (int i = 0; i < checks; ++i) {
             auto target_q = rtde_receive_->getTargetQ();
@@ -420,10 +437,7 @@ private:
             } else {
                 return true;
             }
-
-            std::this_thread::sleep_for(std::chrono::seconds(1));
         }
-
         return false;
     }
 
@@ -435,6 +449,7 @@ private:
             if (stage.waypoints.size() == 0) {
                 RCLCPP_INFO(this->get_logger(), "Stage %s has no waypoints. Skipping...", stage.name.c_str());
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                RCLCPP_INFO(this->get_logger(), "sleeping 50 mili second");
                 continue;
             }
 
@@ -447,7 +462,7 @@ private:
             double base_speed = 1.0; // Base speed for the robot
             double base_acceleration = 1.2; // Base acceleration for the robot
             double tolerance = 0.05;
-            size_t deceleration_points = 10; // Number of points to apply deceleration
+            size_t deceleration_points = 0; // Number of points to apply deceleration
 
             for (size_t i = 0; i < stage.waypoints.size(); ++i) {
                 const auto& waypoint = stage.waypoints[i];
@@ -473,13 +488,13 @@ private:
                 double speed = base_speed;
                 double acceleration = base_acceleration;
 
-                // Apply deceleration over the last few points
+                /* // Apply deceleration over the last few points
                 if (i >= stage.waypoints.size() - deceleration_points) {
                     size_t decel_index = i - (stage.waypoints.size() - deceleration_points);
                     double factor = 1.0 - static_cast<double>(decel_index) / deceleration_points;
                     speed *= factor;
                     acceleration *= factor;
-                }
+                } */
 
                 one_pos.push_back(speed);
                 one_pos.push_back(acceleration);
@@ -489,7 +504,7 @@ private:
 
                 // Ensure the robot is at the final point by adding extra points
                 if (i == stage.waypoints.size() - 1) {
-                    for (size_t j = 0; j < 5; j++) {
+                    for (size_t j = 0; j < 20; j++) {
                         robot_path.push_back(one_pos);
                     }
                 }
@@ -506,14 +521,15 @@ private:
                 RCLCPP_INFO(this->get_logger(), "Gripper moved to position: %f", final_gripper_position);
             } else {
                 rtde_control_->moveJ(robot_path, true);
-            }
-            // Wait until the robot has stopped moving
-            while (isRobotMoving()) {
-                std::this_thread::sleep_for(std::chrono::seconds(1));
+                // Wait until the robot has stopped moving
+                while (isRobotMoving()) {
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                    RCLCPP_INFO(this->get_logger(), "sleeping 1 second");
+                }
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            RCLCPP_INFO(this->get_logger(), "sleeping 50 mili second");
         }
-        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
     double map_value(double value, double fromLow, double fromHigh, double toLow, double toHigh) {
@@ -525,18 +541,6 @@ private:
         double open_finger_joint = 0.07397215645645;
         return map_value(finger_joint_position, open_finger_joint, close_finger_joint, 0.988235, 0.105882);
     }
-
-    /* void gripperOpen() {
-        RCLCPP_INFO(this->get_logger(), "Opening gripper");
-        gripper_->move(1.0);
-        std::this_thread::sleep_for(std::chrono::seconds(2));
-    }
-
-    void gripperClose() {
-        RCLCPP_INFO(this->get_logger(), "Closing gripper");
-        gripper_->move(0.0);
-        std::this_thread::sleep_for(std::chrono::seconds(2));
-    } */
 };
 
 int main(int argc, char **argv) {

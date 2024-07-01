@@ -24,6 +24,7 @@ string target_name  # the name of the link or object that will be allowed to col
 string task
 string id
 string link # this link is used when attaching/detaching objects to it
+bool constrain
 ---
 # Result definition
 bool success

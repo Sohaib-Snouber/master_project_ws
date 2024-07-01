@@ -8,6 +8,7 @@ string target_object              # Used by createAttachObjectStage, createDetac
 string link                       # Used by createAttachObjectStage, createDetachObjectStage
 string[] objects                  # Used by createAllowCollisionStage
 bool allow                        # Used by createAllowCollisionStage
+bool constrain
 ---
 # Response
 bool success

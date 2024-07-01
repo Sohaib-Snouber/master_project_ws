@@ -37,7 +37,7 @@ public:
 private:
     void handle_service(const std::shared_ptr<service_interfaces::srv::MoveitService::Request> request,
                     std::shared_ptr<service_interfaces::srv::MoveitService::Response> response);
-    void createMoveToStage(const std::string& name, const std::string& group, const geometry_msgs::msg::PoseStamped& target);
+    void createMoveToStage(const std::string& name, const std::string& group, const geometry_msgs::msg::PoseStamped& target, bool constrain);
     void createMoveLinearStage(const std::string& name, const std::string& group, const geometry_msgs::msg::PoseStamped& target);
     void createGripperStage(const std::string& name, const std::string& group, double gripper_position);
     void createAttachObjectStage(const std::string& name, const std::string& target_object, const std::string& link);
@@ -52,6 +52,7 @@ private:
     rclcpp::Publisher<master_project_msgs::msg::Task>::SharedPtr task_details_publisher_;
     moveit::core::RobotModelPtr robot_model_;  // Add this line
     planning_scene::PlanningScenePtr planning_scene_; // Add this line
+    rclcpp::TimerBase::SharedPtr initialization_timer_;  
 };
 
 MTCNode::MTCNode(const rclcpp::NodeOptions& options) 
@@ -62,6 +63,13 @@ MTCNode::MTCNode(const rclcpp::NodeOptions& options)
     moveit_service_ = this->create_service<service_interfaces::srv::MoveitService>(
         "moveit_service", std::bind(&MTCNode::handle_service, this, std::placeholders::_1, std::placeholders::_2));        
     
+    // Defer the initialization of shared_from_this()
+    auto timer_callback = [this]() {
+        setup();
+        initialization_timer_->cancel(); // Cancel the timer after initialization
+    };
+    // Use a timer to defer the callback
+    initialization_timer_ = this->create_wall_timer(std::chrono::milliseconds(10), timer_callback);
 }
 
 void MTCNode::setup()
@@ -101,10 +109,17 @@ void MTCNode::handle_service(const std::shared_ptr<service_interfaces::srv::Move
                     std::shared_ptr<service_interfaces::srv::MoveitService::Response> response) {
     // Reset the task and robot model before processing
     task_ = std::make_shared<mtc::Task>("task");
+    // Ensure the robot model is set before adding any stages
+    if (!robot_model_) {
+        RCLCPP_ERROR(this->get_logger(), "Robot model is not loaded.");
+        response->success = false;
+        response->message = "Robot model is not loaded.";
+        return;
+    }
     task_->setRobotModel(robot_model_);  // Set the robot model for the task
 
     if (request->function_name == "createMoveToStage") {
-        createMoveToStage(request->name, request->group, request->target);
+        createMoveToStage(request->name, request->group, request->target, request->constrain);
     } else if (request->function_name == "createMoveLinearStage") {
         createMoveLinearStage(request->name, request->group, request->target);
     } else if (request->function_name == "createGripperStage") {
@@ -130,7 +145,7 @@ void MTCNode::handle_service(const std::shared_ptr<service_interfaces::srv::Move
     task_.reset();
 }
 
-void MTCNode::createMoveToStage(const std::string& name, const std::string& group, const geometry_msgs::msg::PoseStamped& target) {
+void MTCNode::createMoveToStage(const std::string& name, const std::string& group, const geometry_msgs::msg::PoseStamped& target, bool constrain) {
     RCLCPP_INFO(this->get_logger(), "Service message is processing");
 
     task_->loadRobotModel(shared_from_this());
@@ -158,36 +173,27 @@ void MTCNode::createMoveToStage(const std::string& name, const std::string& grou
     auto stage_state_current = std::make_unique<mtc::stages::CurrentState>("current");
     task_->add(std::move(stage_state_current));        
     
-    /* // Define avoidance region constraint
     moveit_msgs::msg::Constraints path_constraints;
 
-    moveit_msgs::msg::PositionConstraint position_constraint;
-    position_constraint.header.frame_id = "base_link"; // Reference frame
-
-    // Define the forbidden region (bounding box dimensions and position)
-    shape_msgs::msg::SolidPrimitive forbidden_box;
-    forbidden_box.type = shape_msgs::msg::SolidPrimitive::BOX;
-    forbidden_box.dimensions.resize(3);
-    forbidden_box.dimensions[0] = 0.1; // X-axis length (adjust as needed)
-    forbidden_box.dimensions[1] = 0.1; // Y-axis width (adjust as needed)
-    forbidden_box.dimensions[2] = 0.2; // Z-axis height (adjust as needed)
-
-    // Define the pose of the forbidden box center
-    geometry_msgs::msg::Pose box_pose;
-    box_pose.position.x = target.pose.position.x; // Adjust as needed
-    box_pose.position.y = target.pose.position.y; // Adjust as needed
-    box_pose.position.z = target.pose.position.z; // Adjust as needed
-    box_pose.orientation = target.pose.orientation;
-
-    position_constraint.constraint_region.primitives.push_back(forbidden_box);
-    position_constraint.constraint_region.primitive_poses.push_back(box_pose);
-    position_constraint.weight = 1.0;
-    path_constraints.position_constraints.push_back(position_constraint); */
+    // Optionally define and add joint constraint for the shoulder joint
+    if (constrain) {
+        moveit_msgs::msg::JointConstraint shoulder_constraint;
+        shoulder_constraint.joint_name = "shoulder_lift_joint"; // shoulder_lift_joint, shoulder_pan_joint Replace with the actual joint name
+        shoulder_constraint.position = -M_PI_2; // -90 degrees in radians
+        shoulder_constraint.tolerance_above = 0.5; // Allowable deviation above the target
+        shoulder_constraint.tolerance_below = 0.5; // Allowable deviation below the target
+        shoulder_constraint.weight = 1.0; // Priority of this constraint
+        path_constraints.joint_constraints.push_back(shoulder_constraint);
+    }
 
     auto move_to_stage = std::make_unique<mtc::stages::MoveTo>(name, sampling_planner);
     move_to_stage->setGroup(group);
     move_to_stage->setGoal(target);
-    //move_to_stage->setPathConstraints(path_constraints); // Set path constraints
+
+    if (constrain) {
+        move_to_stage->setPathConstraints(path_constraints); // Set path constraints if applicable
+    }
+
     task_->add(std::move(move_to_stage));
 }
 /* void createMoveToStage(const std::string& name, const std::string& group, const geometry_msgs::msg::PoseStamped& target) {
@@ -221,6 +227,8 @@ void MTCNode::createMoveLinearStage(const std::string& name, const std::string& 
     cartesian_planner->setMaxVelocityScalingFactor(1.0);
     cartesian_planner->setMaxAccelerationScalingFactor(1.0);
     cartesian_planner->setStepSize(.001);
+
+    cartesian_planner->setProperty("min_fraction", 0.9); // Set to 90% or any value you need
 
     // Current state
     auto stage_state_current = std::make_unique<mtc::stages::CurrentState>("current");
@@ -376,7 +384,7 @@ bool MTCNode::planAndExecute(mtc::Task& task) {
     }
 
     RCLCPP_INFO(this->get_logger(), "Planning task...");
-    if (!task.plan(100)) {
+    if (!task.plan(10)) {
         RCLCPP_ERROR(this->get_logger(), "Task planning failed");
         return false;
     }
