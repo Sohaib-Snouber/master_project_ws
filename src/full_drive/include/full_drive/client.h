@@ -117,7 +117,7 @@ public:
         return sendGoal(goal_msg);
     }
 
-    bool moveTo(const geometry_msgs::msg::PoseStamped &target_pose) {
+    bool moveTo(const geometry_msgs::msg::PoseStamped &target_pose, bool constrain) {
         if (!this->client_->wait_for_action_server()) {
             RCLCPP_ERROR(this->get_logger(), "Action server not available after waiting");
             return false;
@@ -125,6 +125,7 @@ public:
 
         auto goal_msg = FullDrive::Goal();
         goal_msg.target_pose = target_pose;
+        goal_msg.constrain = constrain;
         
         goal_msg.add_collision_object = false;
         goal_msg.delete_collision_object = false;

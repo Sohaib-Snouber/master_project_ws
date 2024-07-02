@@ -17,6 +17,9 @@ set(msg_files
   "msg/Stage.msg"
   "msg/Waypoint.msg"
   "msg/JointState.msg"
+  "msg/MoveGroupActionDetails.msg"
+  "msg/MoveGroupWaypoint.msg"
+  "msg/MoveGroupJointState.msg"
 )
 
 rosidl_generate_interfaces(${PROJECT_NAME}
