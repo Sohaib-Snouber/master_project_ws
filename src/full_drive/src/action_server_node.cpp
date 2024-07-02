@@ -487,7 +487,7 @@ private:
                 
                 double speed = base_speed;
                 double acceleration = base_acceleration;
-
+                
                 /* // Apply deceleration over the last few points
                 if (i >= stage.waypoints.size() - deceleration_points) {
                     size_t decel_index = i - (stage.waypoints.size() - deceleration_points);
@@ -501,13 +501,6 @@ private:
                 one_pos.push_back(tolerance); // Assuming this is a fixed value for something else
 
                 robot_path.push_back(one_pos);
-
-                // Ensure the robot is at the final point by adding extra points
-                if (i == stage.waypoints.size() - 1) {
-                    for (size_t j = 0; j < 20; j++) {
-                        robot_path.push_back(one_pos);
-                    }
-                }
             }
 
             RCLCPP_INFO(this->get_logger(), "Initial gripper position: %f", initial_gripper_position);
@@ -530,6 +523,21 @@ private:
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
             RCLCPP_INFO(this->get_logger(), "sleeping 50 mili second");
         }
+        // Keep checking if the robot is busy
+        RCLCPP_INFO(this->get_logger(), "Checking if the robot is busy...");
+        while (isRobotBusy()) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            RCLCPP_INFO(this->get_logger(), "Robot is still busy, sleeping 1 second");
+        }
+        RCLCPP_INFO(this->get_logger(), "Robot is now idle. Task processing completed.");
+        
+    }
+
+    bool isRobotBusy() {
+        // Check if the robot is steady
+        bool steady = rtde_control_->isSteady();
+        RCLCPP_INFO(this->get_logger(), "Is robot steady: %d", steady);
+        return !steady; // Robot is busy if not steady
     }
 
     double map_value(double value, double fromLow, double fromHigh, double toLow, double toHigh) {

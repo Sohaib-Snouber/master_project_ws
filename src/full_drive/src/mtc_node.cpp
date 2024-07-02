@@ -161,13 +161,11 @@ void MTCNode::createMoveToStage(const std::string& name, const std::string& grou
     task_->setProperty("ik_frame", hand_frame);
 
     auto sampling_planner = std::make_shared<mtc::solvers::PipelinePlanner>(shared_from_this());
-    sampling_planner->setPlannerId("RRTConnectkConfigDefault");
-    sampling_planner->setProperty("max_step", 0.01);
 
     auto cartesian_planner = std::make_shared<mtc::solvers::CartesianPath>();
     cartesian_planner->setMaxVelocityScalingFactor(1.0);
     cartesian_planner->setMaxAccelerationScalingFactor(1.0);
-    cartesian_planner->setStepSize(.001);
+    cartesian_planner->setStepSize(.01);
 
     // Current state
     auto stage_state_current = std::make_unique<mtc::stages::CurrentState>("current");
@@ -226,9 +224,9 @@ void MTCNode::createMoveLinearStage(const std::string& name, const std::string& 
     auto cartesian_planner = std::make_shared<mtc::solvers::CartesianPath>();
     cartesian_planner->setMaxVelocityScalingFactor(1.0);
     cartesian_planner->setMaxAccelerationScalingFactor(1.0);
-    cartesian_planner->setStepSize(.001);
+    cartesian_planner->setStepSize(.01);
 
-    cartesian_planner->setProperty("min_fraction", 0.9); // Set to 90% or any value you need
+    //cartesian_planner->setProperty("min_fraction", 0.9); // Set to 90% or any value you need
 
     // Current state
     auto stage_state_current = std::make_unique<mtc::stages::CurrentState>("current");
@@ -236,6 +234,7 @@ void MTCNode::createMoveLinearStage(const std::string& name, const std::string& 
 
     auto move_linear_stage = std::make_unique<mtc::stages::MoveTo>(name, cartesian_planner);
     move_linear_stage->setGroup(group);
+    move_linear_stage->setTimeout(5.0); // Set a timeout if needed
     move_linear_stage->setGoal(target);
     task_->add(std::move(move_linear_stage));
 }
