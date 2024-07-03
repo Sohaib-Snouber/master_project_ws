@@ -43,7 +43,8 @@ private:
         // Example target poses
         geometry_msgs::msg::PoseStamped target_pose_1 = createTargetPose(0.37, 0.32, 0.5, q1);
         geometry_msgs::msg::PoseStamped target_pose_2 = createTargetPose(0.37, 0.32, 0.45, q1);
-        bool add_constrain = true;
+        bool add_constrain;
+        bool precise_motion;
         geometry_msgs::msg::PoseStamped target_pose_3 = createTargetPose(0.37, 0.32, 0.4, q1);
         geometry_msgs::msg::PoseStamped target_pose_4 = createTargetPose(0.37, 0.32, 0.33, q1);
         geometry_msgs::msg::PoseStamped target_pose_5 = createTargetPose(0.37, 0.32, 0.008+target_differnce, q1);
@@ -56,12 +57,16 @@ private:
         }, "addCollisionObject(cylinder_object1)")) return;
         std::this_thread::sleep_for(std::chrono::seconds(1));
         
+        RCLCPP_INFO(this->get_logger(), "closing gripper to 0.35");
+        if (!tryAction([&]() { return setGripper(0.35); }, "setGripper")) return;
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        
         RCLCPP_INFO(this->get_logger(), "moving robot to target position with shoulder constrain");
-        if (!tryAction([&]() { return moveTo(target_pose_1, add_constrain); }, "moveTo")) return;
+        if (!tryAction([&]() { return moveTo(target_pose_1, add_constrain = true, precise_motion = false); }, "moveTo")) return;
         std::this_thread::sleep_for(std::chrono::seconds(1));
         
         RCLCPP_INFO(this->get_logger(), "closing gripper to 0.35");
-        if (!tryAction([&]() { return setGripper(0.35); }, "setGripper")) return;
+        if (!tryAction([&]() { return setGripper(0.1); }, "setGripper")) return;
         std::this_thread::sleep_for(std::chrono::seconds(1));
 
         RCLCPP_INFO(this->get_logger(), "moving to target linearly");
@@ -72,9 +77,13 @@ private:
         if (!tryAction([&]() { return allowCollision("hand", "cylinder_object1"); }, "allowCollision(hand, cylinder_object1)")) return;
         if (!tryAction([&]() { return allowCollision("surface", "cylinder_object1"); }, "allowCollision(surface, cylinder_object1)")) return;
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        
-        RCLCPP_INFO(this->get_logger(), "closing gripper to 0.7");
-        if (!tryAction([&]() { return setGripper(0.7); }, "setGripper")) return;
+
+        RCLCPP_INFO(this->get_logger(), "moving to target linearly");
+        if (!tryAction([&]() { return moveLinear(target_pose_2); }, "moveLinear")) return;
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+                
+        RCLCPP_INFO(this->get_logger(), "closing gripper to 0.55");
+        if (!tryAction([&]() { return setGripper(0.60); }, "setGripper")) return;
         std::this_thread::sleep_for(std::chrono::seconds(1));
         
         RCLCPP_INFO(this->get_logger(), "moving to target linearly");
@@ -84,7 +93,7 @@ private:
         if (!tryAction([&]() { return allowCollision("hand", "surface"); }, "allowCollision(hand, cylinder_object1)")) return;
 
         RCLCPP_INFO(this->get_logger(), "closing gripper to 0.5");
-        if (!tryAction([&]() { return setGripper(0.35); }, "setGripper")) return;
+        if (!tryAction([&]() { return setGripper(0.20); }, "setGripper")) return;
         std::this_thread::sleep_for(std::chrono::seconds(1));
 
         RCLCPP_INFO(this->get_logger(), "moving to target linearly");
@@ -106,8 +115,8 @@ private:
         if (!tryAction([&]() { return moveLinear(target_pose_5); }, "moveLinear")) return;
         std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        RCLCPP_INFO(this->get_logger(), "closing gripper to 0.7");
-        if (!tryAction([&]() { return setGripper(0.7); }, "setGripper")) return;
+        RCLCPP_INFO(this->get_logger(), "closing gripper to 0.6");
+        if (!tryAction([&]() { return setGripper(0.70); }, "setGripper")) return;
         std::this_thread::sleep_for(std::chrono::seconds(1));
         //if (!tryAction([&]() { return checkRobotStatus(); }, "checkRobotStatus")) return;
 
@@ -173,8 +182,8 @@ private:
         return client_actions_->detachObject(name);
     }
 
-    bool moveTo(const geometry_msgs::msg::PoseStamped& target_pose, bool constrain) {
-        return client_actions_->moveTo(target_pose, constrain);
+    bool moveTo(const geometry_msgs::msg::PoseStamped& target_pose, bool constrain, bool precise_motion) {
+        return client_actions_->moveTo(target_pose, constrain, precise_motion);
     }
 
     bool moveLinear(const geometry_msgs::msg::PoseStamped& target_pose) {

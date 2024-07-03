@@ -12,6 +12,12 @@
 #include "master_project_msgs/msg/move_group_action_details.hpp"  // Replace with actual package name
 #include "master_project_msgs/msg/move_group_waypoint.hpp"
 #include "master_project_msgs/msg/move_group_joint_state.hpp"
+#include <moveit/robot_state/robot_state.h>
+#include <moveit/robot_model_loader/robot_model_loader.h>
+#include <moveit/robot_model/robot_model.h>
+#include <moveit/robot_state/robot_state.h>
+#include <moveit/planning_scene_monitor/planning_scene_monitor.h>
+#include <moveit/collision_detection/collision_matrix.h>
 
 class MoveGroupHelper {
 public:
@@ -23,7 +29,7 @@ public:
         task_details_publisher_ = node_->create_publisher<master_project_msgs::msg::MoveGroupActionDetails>("/task_details", 10);
     }
 
-    bool moveToPose(const geometry_msgs::msg::PoseStamped& target_pose, bool constrain) {
+    bool moveToPose(const geometry_msgs::msg::PoseStamped& target_pose, bool constrain, bool precise_motion) {
         arm_move_group_.setPoseTarget(target_pose);
         arm_move_group_.setMaxVelocityScalingFactor(0.1);
         arm_move_group_.setMaxAccelerationScalingFactor(0.1);
@@ -49,7 +55,7 @@ public:
         if (success) {
             RCLCPP_INFO(node_->get_logger(), "Planning successful, executing...");
             arm_move_group_.execute(my_plan);
-            publishTaskDetails("ur5e_arm", "move_to_pose", my_plan);
+            publishTaskDetails("ur5e_arm", "move_to_pose", my_plan, precise_motion);
         } else {
             RCLCPP_ERROR(node_->get_logger(), "Planning failed");
         }
@@ -60,11 +66,14 @@ public:
     }
 
     bool moveLinear(const geometry_msgs::msg::PoseStamped& target_pose) {
+        // Update the planning scene to ensure latest changes are considered
+        auto planning_scene_monitor = std::make_shared<planning_scene_monitor::PlanningSceneMonitor>(node_, "robot_description");
+        planning_scene_monitor->requestPlanningSceneState();
+        
         // Use Cartesian Paths for linear movement
         std::vector<geometry_msgs::msg::Pose> waypoints;
         waypoints.push_back(target_pose.pose);
 
-        moveit::planning_interface::MoveGroupInterface::Plan my_plan;
         moveit_msgs::msg::RobotTrajectory trajectory;
         
         const double jump_threshold = 0.0;
@@ -76,17 +85,20 @@ public:
             return false;
         }
 
+        moveit::planning_interface::MoveGroupInterface::Plan my_plan;
         my_plan.trajectory_ = trajectory;
 
-        bool success = (arm_move_group_.plan(my_plan) == moveit::core::MoveItErrorCode::SUCCESS);
+        // Directly execute the trajectory
+        bool success = (arm_move_group_.execute(my_plan) == moveit::core::MoveItErrorCode::SUCCESS);
         if (success) {
-            RCLCPP_INFO(node_->get_logger(), "Linear path planning successful, executing...");
+            RCLCPP_INFO(node_->get_logger(), "Linear path planning and execution successful");
             publishTaskDetails("ur5e_arm", "move_linear", my_plan);
         } else {
-            RCLCPP_ERROR(node_->get_logger(), "Linear path planning failed");
+            RCLCPP_ERROR(node_->get_logger(), "Linear path execution failed");
         }
         return success;
     }
+
 
     bool attachObject(const std::string& object_id, const std::string& link) {
         moveit_msgs::msg::AttachedCollisionObject attached_object;
@@ -111,8 +123,13 @@ public:
     }
 
     bool setGripperPosition(double gripper_position) {
+        printGripperJointLimits();  // Print joint limits for the user
+    
         gripper_move_group_.setJointValueTarget("finger_joint", gripper_position);
         moveit::planning_interface::MoveGroupInterface::Plan my_plan;
+
+        gripper_move_group_.setPlanningTime(10.0);
+
         bool success = (gripper_move_group_.plan(my_plan) == moveit::core::MoveItErrorCode::SUCCESS);
 
         if (success) {
@@ -126,17 +143,29 @@ public:
     }
 
     bool allowCollision(const std::string& object1, const std::string& object2, bool allow) {
-        moveit_msgs::msg::PlanningScene planning_scene;
-        planning_scene.is_diff = true;
+        // Get the current planning scene
+        auto planning_scene_monitor = std::make_shared<planning_scene_monitor::PlanningSceneMonitor>(node_, "robot_description");
+        planning_scene_monitor->requestPlanningSceneState();
 
-        planning_scene.allowed_collision_matrix.entry_names.push_back(object1);
-        planning_scene.allowed_collision_matrix.entry_names.push_back(object2);
+        if (!planning_scene_monitor->waitForCurrentRobotState(rclcpp::Clock().now(), 1.0)) {
+            RCLCPP_WARN(node_->get_logger(), "Current robot state is not available");
+            return false;
+        }
 
-        moveit_msgs::msg::AllowedCollisionEntry allowed_collision_entry;
-        allowed_collision_entry.enabled.push_back(allow);
-        planning_scene.allowed_collision_matrix.entry_values.push_back(allowed_collision_entry);
+        // Lock the planning scene
+        planning_scene_monitor::LockedPlanningSceneRW planning_scene(planning_scene_monitor);
 
-        planning_scene_interface_.applyPlanningScene(planning_scene);
+        // Modify the allowed collision matrix
+        collision_detection::AllowedCollisionMatrix& acm = planning_scene->getAllowedCollisionMatrixNonConst();
+        acm.setEntry(object1, object2, allow);
+
+        // Update the planning scene diff
+        moveit_msgs::msg::PlanningScene planning_scene_msg;
+        planning_scene->getPlanningSceneDiffMsg(planning_scene_msg);
+
+        // Publish the planning scene
+        planning_scene_interface_.applyPlanningScene(planning_scene_msg);
+
         RCLCPP_INFO(node_->get_logger(), "Allowed collision between %s and %s: %d", object1.c_str(), object2.c_str(), allow);
         return true;
     }
@@ -149,7 +178,13 @@ private:
     moveit::planning_interface::PlanningSceneInterface planning_scene_interface_;
     rclcpp::Publisher<master_project_msgs::msg::MoveGroupActionDetails>::SharedPtr task_details_publisher_;
 
-    void publishTaskDetails(const std::string& group_name, const std::string& action_name, const moveit::planning_interface::MoveGroupInterface::Plan& plan) {
+    void printGripperJointLimits() {
+        const moveit::core::JointModel* joint_model = gripper_move_group_.getRobotModel()->getJointModel("finger_joint");
+        const moveit::core::VariableBounds& bounds = joint_model->getVariableBounds()[0];
+        RCLCPP_INFO(node_->get_logger(), "Finger joint limits: min_position = %f, max_position = %f", bounds.min_position_, bounds.max_position_);
+    }
+
+    void publishTaskDetails(const std::string& group_name, const std::string& action_name, const moveit::planning_interface::MoveGroupInterface::Plan& plan, bool precise_motion = true) {
         // Create and publish task details message
         master_project_msgs::msg::MoveGroupActionDetails action_details_msg;
         master_project_msgs::msg::MoveGroupWaypoint waypoint_msg;
@@ -157,6 +192,7 @@ private:
 
         action_details_msg.group_name = group_name;
         action_details_msg.action_name = action_name;
+        action_details_msg.precise_motion = precise_motion;
 
         for (const auto& trajectory_point : plan.trajectory_.joint_trajectory.points) {
             waypoint_msg.joints.clear();  // Clear the joints vector for each new trajectory point

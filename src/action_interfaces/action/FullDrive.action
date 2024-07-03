@@ -25,6 +25,7 @@ string task
 string id
 string link # this link is used when attaching/detaching objects to it
 bool constrain
+bool precise_motion
 ---
 # Result definition
 bool success

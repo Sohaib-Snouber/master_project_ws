@@ -13,7 +13,8 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#include "master_project_msgs/msg/move_group_action_details.hpp"  // Add this line
+#include "master_project_msgs/msg/move_group_action_details.hpp"
+#include <mutex>
 
 
 #if __cplusplus < 201703L  // If the C++ version is less than C++17, define clamp
@@ -62,7 +63,7 @@ public:
         auto timer_callback = [this]() {
             planning_scene_updater_ = std::make_shared<PlanningSceneUpdater>(this->shared_from_this());
             RCLCPP_INFO(this->get_logger(), "Initialized the PlanninSceneUpdater class");
-            move_group_helper_ = std::make_shared<MoveGroupHelper>(this->shared_from_this());
+            //move_group_helper_ = std::make_shared<MoveGroupHelper>(this->shared_from_this());
             RCLCPP_INFO(this->get_logger(), "Initialized the MoveGroupHelper class");
             loadExistingCollisionObjects();
             initialization_timer_->cancel(); // Cancel the timer after initialization
@@ -83,7 +84,7 @@ private:
     std::unordered_map<std::string, ObjectProperties> object_map_;
     rclcpp::TimerBase::SharedPtr initialization_timer_;  // Store the timer to prevent it from being destroyed
     moveit::planning_interface::PlanningSceneInterface planning_scene_interface_;  // Add this line
-    std::shared_ptr<MoveGroupHelper> move_group_helper_;  // Add this line
+    std::mutex task_mutex_;
 
     /* // example of Adding an object to the map
     object_map_["object1"] = {true, false, {"object2", "object3"}}; */
@@ -130,6 +131,8 @@ private:
         std::cout << "id: " << goal->id << std::endl;
         std::cout << "link: " << goal->link << std::endl;
         std::cout << "constrain: " << goal->constrain << std::endl;
+        std::cout << "precise_motion: " << goal->precise_motion << std::endl;
+
 
         return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE; 
     }
@@ -149,101 +152,103 @@ private:
         const auto goal = goal_handle->get_goal();
         auto result = std::make_shared<FullDrive::Result>();
         bool success = false;
+        
+        {
+            MoveGroupHelper move_group_helper(this->shared_from_this());
 
-        MoveGroupHelper move_group_helper(this->shared_from_this());
+            if (goal->add_collision_object) {
+                if (object_map_.find(goal->target_name) != object_map_.end()) {
+                    RCLCPP_ERROR(this->get_logger(), "Collision object already exists: %s", goal->target_name.c_str());
+                    result->success = false;
+                    result->message = "Collision object already exists.";
+                    goal_handle->abort(result);
+                    return true;
+                }
+                RCLCPP_INFO(this->get_logger(), "Adding collision object");
+                planning_scene_updater_->addCollisionObject(goal->target_name, goal->object_primitive, goal->object_pose, goal->color);
+                object_map_[goal->target_name] = {true, false, {}};
+                success = true;
 
-        if (goal->add_collision_object) {
-            if (object_map_.find(goal->target_name) != object_map_.end()) {
-                RCLCPP_ERROR(this->get_logger(), "Collision object already exists: %s", goal->target_name.c_str());
-                result->success = false;
-                result->message = "Collision object already exists.";
-                goal_handle->abort(result);
-                return true;
+            } else if (goal->delete_collision_object) {
+                if (object_map_.find(goal->target_name) == object_map_.end()) {
+                    RCLCPP_ERROR(this->get_logger(), "Collision object does not exist: %s", goal->target_name.c_str());
+                    result->success = false;
+                    result->message = "Collision object does not exist.";
+                    goal_handle->abort(result);
+                    return false;
+                }
+                RCLCPP_INFO(this->get_logger(), "Deleting collision object");
+                planning_scene_updater_->removeCollisionObject(goal->target_name);
+                object_map_.erase(goal->target_name);
+                success = true;
+
+            } else if (goal->attach_object) {
+                if (object_map_.find(goal->target_name) == object_map_.end() || !object_map_[goal->target_name].exists) {
+                    RCLCPP_ERROR(this->get_logger(), "Object does not exist: %s", goal->target_name.c_str());
+                    result->success = false;
+                    result->message = "Object does not exist.";
+                    goal_handle->abort(result);
+                    return false;
+                }
+                RCLCPP_INFO(this->get_logger(), "Attaching object");
+                success = attachObject(goal->target_name, goal->link);
+                result->success = success;
+
+            } else if (goal->detach_object) {
+                if (object_map_.find(goal->target_name) == object_map_.end() || !object_map_[goal->target_name].exists) {
+                    RCLCPP_ERROR(this->get_logger(), "Object does not exist: %s", goal->target_name.c_str());
+                    result->success = false;
+                    result->message = "Object does not exist.";
+                    goal_handle->abort(result);
+                    return false;
+                }
+                RCLCPP_INFO(this->get_logger(), "Detaching object");
+                success = detachObject(goal->target_name, goal->link);
+                result->success = success;
+
+            } else if (goal->move_to) {
+                RCLCPP_INFO(this->get_logger(), "Moving to pose");
+                success = move_group_helper.moveToPose(goal->target_pose, goal->constrain, goal->precise_motion);
+                result->success = success;
+
+            } else if (goal->move_linear) {
+                RCLCPP_INFO(this->get_logger(), "Moving linearly to pose");
+                success = move_group_helper.moveLinear(goal->target_pose);
+                result->success = success;
+
+            } else if (goal->set_gripper_position) {
+                RCLCPP_INFO(this->get_logger(), "Setting gripper to position: %f", goal->gripper_position);
+                success = move_group_helper.setGripperPosition(goal->gripper_position);
+                result->success = success;
+
+            }else if (goal->check_robot_status) {
+                success = checkRobotStatus(goal_handle, result);
+
+            } else if (goal->allow_collision) {
+                if (goal->target_name != "hand" && object_map_.find(goal->target_name) == object_map_.end()) {
+                    RCLCPP_ERROR(this->get_logger(), "Object does not exist: %s", goal->target_name.c_str());
+                    result->success = false;
+                    result->message = "Object does not exist.";
+                    goal_handle->abort(result);
+                    return false;
+                }
+                RCLCPP_INFO(this->get_logger(), "Allowing collision");
+                success = allowCollision(goal->target_name, goal->object_name, true);
+                result->success = success;
+
+            } else if (goal->reenable_collision) {
+                if (goal->target_name != "hand" && goal->target_name != "base_link_inertia" && object_map_.find(goal->target_name) == object_map_.end()) {
+                    RCLCPP_ERROR(this->get_logger(), "Object does not exist: %s", goal->target_name.c_str());
+                    result->success = false;
+                    result->message = "Object does not exist.";
+                    goal_handle->abort(result);
+                    return false;
+                }
+                RCLCPP_INFO(this->get_logger(), "Re-enabling collision");
+                success = allowCollision(goal->target_name, goal->object_name, false);
+                result->success = success;
             }
-            RCLCPP_INFO(this->get_logger(), "Adding collision object");
-            planning_scene_updater_->addCollisionObject(goal->target_name, goal->object_primitive, goal->object_pose, goal->color);
-            object_map_[goal->target_name] = {true, false, {}};
-            success = true;
-
-        } else if (goal->delete_collision_object) {
-            if (object_map_.find(goal->target_name) == object_map_.end()) {
-                RCLCPP_ERROR(this->get_logger(), "Collision object does not exist: %s", goal->target_name.c_str());
-                result->success = false;
-                result->message = "Collision object does not exist.";
-                goal_handle->abort(result);
-                return false;
-            }
-            RCLCPP_INFO(this->get_logger(), "Deleting collision object");
-            planning_scene_updater_->removeCollisionObject(goal->target_name);
-            object_map_.erase(goal->target_name);
-            success = true;
-
-        } else if (goal->attach_object) {
-            if (object_map_.find(goal->target_name) == object_map_.end() || !object_map_[goal->target_name].exists) {
-                RCLCPP_ERROR(this->get_logger(), "Object does not exist: %s", goal->target_name.c_str());
-                result->success = false;
-                result->message = "Object does not exist.";
-                goal_handle->abort(result);
-                return false;
-            }
-            RCLCPP_INFO(this->get_logger(), "Attaching object");
-            success = move_group_helper_->attachObject(goal->target_name, goal->link);
-            result->success = success;
-
-        } else if (goal->detach_object) {
-            if (object_map_.find(goal->target_name) == object_map_.end() || !object_map_[goal->target_name].exists) {
-                RCLCPP_ERROR(this->get_logger(), "Object does not exist: %s", goal->target_name.c_str());
-                result->success = false;
-                result->message = "Object does not exist.";
-                goal_handle->abort(result);
-                return false;
-            }
-            RCLCPP_INFO(this->get_logger(), "Detaching object");
-            success = move_group_helper_->detachObject(goal->target_name, goal->link);
-            result->success = success;
-
-        } else if (goal->move_to) {
-            RCLCPP_INFO(this->get_logger(), "Moving to pose");
-            success = move_group_helper_->moveToPose(goal->target_pose, goal->constrain);
-            result->success = success;
-
-        } else if (goal->move_linear) {
-            RCLCPP_INFO(this->get_logger(), "Moving linearly to pose");
-            success = move_group_helper_->moveLinear(goal->target_pose);
-            result->success = success;
-
-        } else if (goal->check_robot_status) {
-            success = checkRobotStatus(goal_handle, result);
-
-        } else if (goal->allow_collision) {
-            if (goal->target_name != "hand" && object_map_.find(goal->target_name) == object_map_.end()) {
-                RCLCPP_ERROR(this->get_logger(), "Object does not exist: %s", goal->target_name.c_str());
-                result->success = false;
-                result->message = "Object does not exist.";
-                goal_handle->abort(result);
-                return false;
-            }
-            RCLCPP_INFO(this->get_logger(), "Allowing collision");
-            success = move_group_helper_->allowCollision(goal->target_name, goal->object_name, true);
-            result->success = success;
-
-        } else if (goal->reenable_collision) {
-            if (goal->target_name != "hand" && goal->target_name != "base_link_inertia" && object_map_.find(goal->target_name) == object_map_.end()) {
-                RCLCPP_ERROR(this->get_logger(), "Object does not exist: %s", goal->target_name.c_str());
-                result->success = false;
-                result->message = "Object does not exist.";
-                goal_handle->abort(result);
-                return false;
-            }
-            RCLCPP_INFO(this->get_logger(), "Re-enabling collision");
-            success = move_group_helper_->allowCollision(goal->target_name, goal->object_name, false);
-            result->success = success;
-
-        } else if (goal->set_gripper_position) {
-            RCLCPP_INFO(this->get_logger(), "Setting gripper to position: %f", goal->gripper_position);
-            success = move_group_helper_->setGripperPosition(goal->gripper_position);
-            result->success = success;
-        }
+        } // The MoveGroupHelper instance is destroyed here
         
         // Set the result and return
         if (success) {
@@ -268,6 +273,54 @@ private:
         }
         RCLCPP_INFO(this->get_logger(), "Robot has stopped moving.");
         std::this_thread::sleep_for(std::chrono::seconds(1));
+        return true;
+    }
+
+    bool attachObject(const std::string& object_id, const std::string& link) {
+        moveit_msgs::msg::AttachedCollisionObject attached_object;
+        attached_object.link_name = link;
+        attached_object.object.id = object_id;
+        attached_object.object.operation = moveit_msgs::msg::CollisionObject::ADD;
+
+        planning_scene_interface_.applyAttachedCollisionObject(attached_object);
+        RCLCPP_INFO(this->get_logger(), "Object %s attached to %s", object_id.c_str(), link.c_str());
+        return true;
+    }
+
+    bool allowCollision(const std::string& object1, const std::string& object2, bool allow) {
+
+        // Create a RobotModelLoader
+        robot_model_loader::RobotModelLoader robot_model_loader(shared_from_this(), "robot_description");
+        moveit::core::RobotModelPtr robot_model = robot_model_loader.getModel();
+        planning_scene::PlanningScene planning_scene(robot_model);
+        
+        // Update the planning scene diff
+        moveit_msgs::msg::PlanningScene planning_scene_msg;
+        planning_scene.getPlanningSceneDiffMsg(planning_scene_msg);
+
+        // Modify the allowed collision matrix
+        collision_detection::AllowedCollisionMatrix& acm = planning_scene.getAllowedCollisionMatrixNonConst();
+        acm.setEntry(object1, object2, allow);
+
+        // Update the planning scene with the modified ACM
+        moveit_msgs::msg::AllowedCollisionMatrix acm_msg;
+        acm.getMessage(acm_msg);
+        planning_scene_msg.allowed_collision_matrix = acm_msg;
+        
+        planning_scene_interface_.applyPlanningScene(planning_scene_msg);
+
+        RCLCPP_INFO(this->get_logger(), "Allowed collision between %s and %s: %d", object1.c_str(), object2.c_str(), allow);
+        return true;
+    }
+
+    bool detachObject(const std::string& object_id, const std::string& link) {
+        moveit_msgs::msg::AttachedCollisionObject detached_object;
+        detached_object.link_name = link;
+        detached_object.object.id = object_id;
+        detached_object.object.operation = moveit_msgs::msg::CollisionObject::REMOVE;
+
+        planning_scene_interface_.applyAttachedCollisionObject(detached_object);
+        RCLCPP_INFO(this->get_logger(), "Object %s detached from %s", object_id.c_str(), link.c_str());
         return true;
     }
 
@@ -310,12 +363,13 @@ private:
     }
 
     void processTask(const master_project_msgs::msg::MoveGroupActionDetails& task_details) {
+        std::lock_guard<std::mutex> lock(task_mutex_);  // Lock the mutex at the beginning
         RCLCPP_INFO(this->get_logger(), "Processing task for group: %s, action: %s", task_details.group_name.c_str(), task_details.action_name.c_str());
 
         std::vector<std::vector<double>> robot_path;
         double initial_gripper_position = -1;
         double final_gripper_position = -1;
-        double finger_change = 0.1;
+        double finger_change = 0.05;
 
         // Check if waypoints are empty
         if (task_details.waypoints.empty()) {
@@ -334,44 +388,61 @@ private:
                 joint_positions.push_back(joint.position);
             }
 
+            if(task_details.precise_motion == true){
+                if (task_details.group_name == "ur5e_arm"){               
+                    rtde_control_->moveJ(joint_positions, 1.0, 1.0, false);
+
+                } else if (task_details.group_name == "gripper") {
+                    if (!task_details.waypoints.front().joints.empty()) {
+                        initial_gripper_position = task_details.waypoints.front().joints.back().position;
+                    }
+                    if (!task_details.waypoints.back().joints.empty()) {
+                        final_gripper_position = task_details.waypoints.back().joints.back().position;
+                    }
+
+                    RCLCPP_INFO(this->get_logger(), "Initial gripper position: %f, Final gripper position: %f", initial_gripper_position, final_gripper_position);
+
+                    if (abs(abs(initial_gripper_position) - abs(final_gripper_position)) > finger_change) {
+                        RCLCPP_INFO(this->get_logger(), "Moving gripper to position: %f", final_gripper_position);
+                        final_gripper_position = map_finger_joint_to_gripper(final_gripper_position);
+                        final_gripper_position = std::clamp(final_gripper_position, 0.0, 1.0);
+                        gripper_->move(final_gripper_position);
+                        RCLCPP_INFO(this->get_logger(), "Gripper moved to position: %f", final_gripper_position);
+                        break;
+                    }
+                }
+            }
             joint_positions.push_back(1.0);
             joint_positions.push_back(1.0);
             joint_positions.push_back(0.05); // Tolerance or some other parameter
 
             robot_path.push_back(joint_positions);
+
         }
+        if(task_details.precise_motion == false){
+            if (task_details.group_name == "ur5e_arm"){               
+                rtde_control_->moveJ(robot_path, false);
 
-        if (task_details.group_name == "gripper") {
-            if (!task_details.waypoints.front().joints.empty()) {
-                initial_gripper_position = task_details.waypoints.front().joints.back().position;
-            }
-            if (!task_details.waypoints.back().joints.empty()) {
-                final_gripper_position = task_details.waypoints.back().joints.back().position;
-            }
+            } else if (task_details.group_name == "gripper") {
+                if (!task_details.waypoints.front().joints.empty()) {
+                    initial_gripper_position = task_details.waypoints.front().joints.back().position;
+                }
+                if (!task_details.waypoints.back().joints.empty()) {
+                    final_gripper_position = task_details.waypoints.back().joints.back().position;
+                }
 
-            RCLCPP_INFO(this->get_logger(), "Initial gripper position: %f, Final gripper position: %f", initial_gripper_position, final_gripper_position);
+                RCLCPP_INFO(this->get_logger(), "Initial gripper position: %f, Final gripper position: %f", initial_gripper_position, final_gripper_position);
 
-            if (abs(abs(initial_gripper_position) - abs(final_gripper_position)) > finger_change) {
-                RCLCPP_INFO(this->get_logger(), "Moving gripper to position: %f", final_gripper_position);
-                final_gripper_position = std::clamp(final_gripper_position, 0.0, 1.0);
-                RCLCPP_INFO(this->get_logger(), "Moving gripper to position: %f", final_gripper_position);
-                gripper_->move(final_gripper_position);
-                RCLCPP_INFO(this->get_logger(), "Gripper moved to position: %f", final_gripper_position);
-            }
-        } else {
-            RCLCPP_INFO(this->get_logger(), "Executing robot path with %zu waypoints", robot_path.size());
-            rtde_control_->moveJ(robot_path, true);
-
-            // Wait until the robot has stopped moving
-            while (isRobotMoving()) {
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-                RCLCPP_INFO(this->get_logger(), "Robot is moving, sleeping 1 second");
+                if (abs(abs(initial_gripper_position) - abs(final_gripper_position)) > finger_change) {
+                    RCLCPP_INFO(this->get_logger(), "Moving gripper to position: %f", final_gripper_position);
+                    final_gripper_position = map_finger_joint_to_gripper(final_gripper_position);
+                    final_gripper_position = std::clamp(final_gripper_position, 0.0, 1.0);
+                    gripper_->move(final_gripper_position);
+                    RCLCPP_INFO(this->get_logger(), "Gripper moved to position: %f", final_gripper_position);
+                }
             }
         }
-
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        RCLCPP_INFO(this->get_logger(), "Sleeping 50 milliseconds");
-
         // Keep checking if the robot is busy
         RCLCPP_INFO(this->get_logger(), "Checking if the robot is busy...");
         while (isRobotBusy()) {
@@ -380,8 +451,6 @@ private:
         }
         RCLCPP_INFO(this->get_logger(), "Robot is now idle. Task processing completed.");
     }
-
-
 
     bool isRobotBusy() {
         // Check if the robot is steady
