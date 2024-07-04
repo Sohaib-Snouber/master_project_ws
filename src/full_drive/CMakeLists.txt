@@ -33,8 +33,6 @@ ament_target_dependencies(sync_rviz_pose
   moveit_core
   ur_rtde
 )
-add_executable(planning_scene_node src/planning_scene_node.cpp)
-ament_target_dependencies(planning_scene_node rclcpp moveit_core moveit_ros_planning_interface)
 
 add_executable(action_server_node src/action_server_node.cpp)
 ament_target_dependencies(action_server_node 
@@ -52,7 +50,6 @@ ament_target_dependencies(usage_node rclcpp rclcpp_action moveit_core moveit_ros
 
 install(TARGETS
   sync_rviz_pose
-  planning_scene_node
   action_server_node
   usage_node
   DESTINATION lib/${PROJECT_NAME})
