@@ -16,14 +16,6 @@ def generate_launch_description():
         parameters=[moveit_config]
     )
 
-    planning_scene_node = Node(
-        package='full_drive',
-        executable='planning_scene_node',
-        name='planning_scene_node',
-        output='screen',
-        parameters=[moveit_config]
-    )
-
     action_server_node = Node(
         package='full_drive',
         executable='action_server_node',
@@ -37,7 +29,7 @@ def generate_launch_description():
         RegisterEventHandler(
             event_handler=OnProcessExit(
                 target_action=sync_rviz_pose,
-                on_exit=[planning_scene_node, action_server_node],
+                on_exit=[action_server_node],
             )
         ),
     ])
