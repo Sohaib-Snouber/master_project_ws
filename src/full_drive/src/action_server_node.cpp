@@ -448,17 +448,6 @@ private:
         return true;
     }
 
-    bool attachObject(const std::string& object_id, const std::string& link) {
-        moveit_msgs::msg::AttachedCollisionObject attached_object;
-        attached_object.link_name = link;
-        attached_object.object.id = object_id;
-        attached_object.object.operation = moveit_msgs::msg::CollisionObject::ADD;
-
-        planning_scene_interface_->applyAttachedCollisionObject(attached_object);
-        RCLCPP_INFO(this->get_logger(), "Object %s attached to %s", object_id.c_str(), link.c_str());
-        return true;
-    }
-
     bool allowCollision(const std::string& object1, const std::string& object2, bool allow) {
         using namespace moveit::task_constructor;
 
@@ -530,18 +519,120 @@ private:
         }
     }
 
+    bool attachObject(const std::string& object_id, const std::string& link) {
+        using namespace moveit::task_constructor;
 
+        // Create a Task to hold the stage
+        Task task;
+        task.stages()->setName("attach task");
 
+        try {
+            task.loadRobotModel(shared_from_this());  // Use the current node to load the robot model
+        } catch (const std::exception &e) {
+            RCLCPP_ERROR(this->get_logger(), "Error loading robot model: %s", e.what());
+            return false;
+        }
+
+        const auto& arm_group_name = "ur5e_arm";
+        const auto& hand_group_name = "gripper";
+        const auto& hand_frame = "flange";
+
+        // Set task properties
+        task.setProperty("group", arm_group_name);
+        task.setProperty("eef", hand_group_name);
+        task.setProperty("ik_frame", hand_frame);
+
+        // Current state
+        auto stage_state_current = std::make_unique<stages::CurrentState>("current");
+        task.add(std::move(stage_state_current));
+
+        try {
+            auto attach_stage = std::make_unique<stages::ModifyPlanningScene>("attach " + object_id);
+            attach_stage->attachObject(object_id, link);
+            task.add(std::move(attach_stage));
+        } catch (const std::exception &e) {
+            RCLCPP_ERROR(this->get_logger(), "Error creating attach stage: %s", e.what());
+            return false;
+        }
+
+        // Execute the task
+        try {
+            task.plan(0);  // Plan with the first solution
+            if (!task.solutions().empty()) {
+                const auto& solution = task.solutions().front();
+                if (task.execute(*solution) == moveit::core::MoveItErrorCode::SUCCESS) {
+                    RCLCPP_INFO(this->get_logger(), "Attached object %s to %s", object_id.c_str(), link.c_str());
+                    return true;
+                } else {
+                    RCLCPP_ERROR(this->get_logger(), "Failed to execute task to attach object %s to %s", object_id.c_str(), link.c_str());
+                    return false;
+                }
+            } else {
+                RCLCPP_ERROR(this->get_logger(), "No valid solutions found for attaching object %s to %s", object_id.c_str(), link.c_str());
+                return false;
+            }
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Exception caught while attaching object: %s", e.what());
+            return false;
+        }
+    }
 
     bool detachObject(const std::string& object_id, const std::string& link) {
-        moveit_msgs::msg::AttachedCollisionObject detached_object;
-        detached_object.link_name = link;
-        detached_object.object.id = object_id;
-        detached_object.object.operation = moveit_msgs::msg::CollisionObject::REMOVE;
+        using namespace moveit::task_constructor;
 
-        planning_scene_interface_->applyAttachedCollisionObject(detached_object);
-        RCLCPP_INFO(this->get_logger(), "Object %s detached from %s", object_id.c_str(), link.c_str());
-        return true;
+        // Create a Task to hold the stage
+        Task task;
+        task.stages()->setName("detach task");
+
+        try {
+            task.loadRobotModel(shared_from_this());  // Use the current node to load the robot model
+        } catch (const std::exception &e) {
+            RCLCPP_ERROR(this->get_logger(), "Error loading robot model: %s", e.what());
+            return false;
+        }
+
+        const auto& arm_group_name = "ur5e_arm";
+        const auto& hand_group_name = "gripper";
+        const auto& hand_frame = "flange";
+
+        // Set task properties
+        task.setProperty("group", arm_group_name);
+        task.setProperty("eef", hand_group_name);
+        task.setProperty("ik_frame", hand_frame);
+
+        // Current state
+        auto stage_state_current = std::make_unique<stages::CurrentState>("current");
+        task.add(std::move(stage_state_current));
+
+        try {
+            auto detach_stage = std::make_unique<stages::ModifyPlanningScene>("detach " + object_id);
+            detach_stage->detachObject(object_id, link);
+            task.add(std::move(detach_stage));
+        } catch (const std::exception &e) {
+            RCLCPP_ERROR(this->get_logger(), "Error creating detach stage: %s", e.what());
+            return false;
+        }
+
+        // Execute the task
+        try {
+            task.plan(0);  // Plan with the first solution
+            if (!task.solutions().empty()) {
+                const auto& solution = task.solutions().front();
+                if (task.execute(*solution) == moveit::core::MoveItErrorCode::SUCCESS) {
+                    RCLCPP_INFO(this->get_logger(), "Detached object %s from %s", object_id.c_str(), link.c_str());
+                    return true;
+                } else {
+                    RCLCPP_ERROR(this->get_logger(), "Failed to execute task to detach object %s from %s", object_id.c_str(), link.c_str());
+                    return false;
+                }
+            } else {
+                RCLCPP_ERROR(this->get_logger(), "No valid solutions found for detaching object %s from %s", object_id.c_str(), link.c_str());
+                return false;
+            }
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Exception caught while detaching object: %s", e.what());
+            return false;
+        }
     }
 
     bool moveToPose(const geometry_msgs::msg::PoseStamped& target_pose, bool constrain, bool precise_motion) {

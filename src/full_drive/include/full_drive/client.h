@@ -77,6 +77,7 @@ public:
 
         auto goal_msg = FullDrive::Goal();
         goal_msg.target_name = target_name;
+        goal_msg.link = "flange";
 
         goal_msg.add_collision_object = false;
         goal_msg.delete_collision_object = false;
@@ -101,6 +102,7 @@ public:
 
         auto goal_msg = FullDrive::Goal();
         goal_msg.target_name = target_name;
+        goal_msg.link = "flange";
 
         goal_msg.add_collision_object = false;
         goal_msg.delete_collision_object = false;

@@ -77,10 +77,25 @@ private:
         // First moveLinear with additional 90 degrees rotation on z-axis
         tf2::Quaternion q3 = q2 * tf2::Quaternion(tf2::Vector3(0, 0, 1), M_PI_2);
         double piece_height = 0.015;  // the height of the piece is 1.5cm
-        double piece_width = 0.025;  // the width of the piece is 2.5cm
-        double robot_base_height = 0.015; // 1,5 cm is thew hieght of the base of the real robot, that it is not configured in rviz 
+        double piece_diameter = 0.025;  // the diameter of the piece is 2.5cm
+        double robot_base_height = 0.015; // 1,5 cm is the hieght of the base of the real robot, that it is not configured in rviz 
         double dif_btw_tip_tcp = 0.24; // 22cm the distacne between the tip of the gripper and the TCP point of the wrist3_link (the planning target will get to that link point)
-        
+        double dist_btw_objects = 0.005; //0.5 cm distance between the objects, that will be grasped
+        double dist_btw_targets = 0.01; // distannce between vertical targets 
+        double gripper_finger_width = 0.005; // the gripper finger width is 0.5 cm
+        double num_objects = 12; // this will make like counter of the number of objects that have been grasped
+        double pallet_width = 0.06;  // 6cm the width of tha pallet, that the objects are going to be placed on.
+        double pallet_height = 0.09;
+        double pallet_offset = 0.01;  // the pallet have material with 1cm above the surfce of the robot
+
+        double x_targets1 = 0.342; // the distance from robot origin till the lower edge of the first pallet
+        double y_targets1 = 0.1345;  // the distance from robot origin till the lower left edge of the first pallet
+        double x_objects1 = 0.372; // the distance from robot origin til the mid of all objects x values in robot coordinates
+        double y_objects1 = 0.273; // this is the distance from robot origin till the right edge of the first object
+
+        int cols_counter = 0;
+        int rows_counter =0;
+
         bool add_constrain;
         bool precise_motion;
         // information about the set gripper function:
@@ -95,173 +110,141 @@ private:
         //  0.6  |    2    cm
         //  0.7  |    0    cm   (full close)
 
-        // Example target poses
-        geometry_msgs::msg::PoseStamped objects_poses = createTargetPose(0.37, 0.32, 0.5, q1);
-        geometry_msgs::msg::PoseStamped fisrt_object_pose = createTargetPose(0.37, 0.32, 0.45, q1);
-      
-        geometry_msgs::msg::PoseStamped targets_poses = createTargetPose(0.35, 0.14, 0.5, q1);
-        geometry_msgs::msg::PoseStamped first_target_pose = createTargetPose(0.37, 0.32, 0.1 + dif_btw_tip_tcp, q1);
+        for (int i = 0; i < num_objects; ++i) {
+            std::string object_name = "cylinder_object" + std::to_string(i);
+            RCLCPP_INFO(this->get_logger(), "Adding the %s", object_name.c_str());
+            
+        }
         
-        geometry_msgs::msg::PoseStamped target_pose_4 = createTargetPose(0.37, 0.32, 0.01 + dif_btw_tip_tcp, q1);
-        geometry_msgs::msg::PoseStamped target_pose_5 = createTargetPose(0.37, 0.32, 0.0 + dif_btw_tip_tcp + piece_height/2.0 - robot_base_height , q1);
-        geometry_msgs::msg::PoseStamped target_pose_6 = createTargetPose(0.37, 0.10, 0.5, q1);
-
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.00");
-        if (!tryAction([&]() { return setGripper(setGripperInCm(0)); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(5));
+        // Create object poses, the output will be like: object_poses = [0,1,2,3,4,5,6,7,8,9,10,11,12], where 0 is the objects poses, and the other ones are the actual poses for every object with its number respectively
+        std::vector<geometry_msgs::msg::PoseStamped> object_poses;
+        object_poses.push_back(createTargetPose(x_objects1, y_objects1, 0.5, q1));
+        for (int i = 0; i <= num_objects; ++i) {
+            double y_position = y_objects1 + (i + 1) * (piece_diameter / 2.0) + i * (piece_diameter / 2.0) + i * dist_btw_objects;
+            geometry_msgs::msg::PoseStamped pose = createTargetPose(x_objects1, y_position, (2 * piece_height / 3) - robot_base_height + dif_btw_tip_tcp, q1);
+            object_poses.push_back(pose);
+        }
         
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.00");
-        if (!tryAction([&]() { return setGripper(setGripperInCm(1)); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(5));
+        std::vector<geometry_msgs::msg::PoseStamped> object_mid_poses;
+        for (int i = 0; i <= num_objects; ++i) {
+            double y_position = y_objects1 + (i + 1) * (piece_diameter / 2.0) + i * (piece_diameter / 2.0) + i * dist_btw_objects;
+            geometry_msgs::msg::PoseStamped pose = createTargetPose(x_objects1, y_position, (2 * piece_height / 3) - robot_base_height + dif_btw_tip_tcp + 0.1, q1); // 10cm above the object
+            object_mid_poses.push_back(pose);
+        }
 
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.00");
-        if (!tryAction([&]() { return setGripper(setGripperInCm(2)); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.00");
-        if (!tryAction([&]() { return setGripper(setGripperInCm(3)); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(5));RCLCPP_INFO(this->get_logger(), "setting gripper to 0.00");
-        if (!tryAction([&]() { return setGripper(setGripperInCm(4)); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.00");
-        if (!tryAction([&]() { return setGripper(setGripperInCm(5)); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.00");
-        if (!tryAction([&]() { return setGripper(setGripperInCm(6.5)); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.00");
-        if (!tryAction([&]() { return setGripper(setGripperInCm(10)); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.00");
-        if (!tryAction([&]() { return setGripper(setGripperInCm(12)); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.00");
-        if (!tryAction([&]() { return setGripper(setGripperInCm(14)); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(5));
+        // Create target poses, the output will be like: target_poses = [0,1,2,3,4,5,6], where 0 is the targets poses, and the other ones are the actual poses for every target with its number respectively
+        // the first pallet positions is added now
+        // Create target poses
+        std::vector<geometry_msgs::msg::PoseStamped> target_poses;
+        target_poses.push_back(createTargetPose(x_targets1, y_targets1, 0.5, q1));
+        for (int i = 0; i <= 6; ++i) {
+            double x_position = x_targets1 + pallet_height - (i / 2 + 1) * (piece_diameter / 2.0) - (i / 2) * (piece_diameter / 2.0) - (i / 2) * dist_btw_targets; // examples on i/2 > 1/2 = 0, 3/2 = 1
+            double y_position = y_targets1 - (i % 2 + 1) * (piece_diameter / 2.0) - (i % 2) * (piece_diameter / 2.0) - (i % 2) * dist_btw_objects;  //examples on i%2 > 1%2 = 1, 2%2 = 0, 0%2 = 0
+            geometry_msgs::msg::PoseStamped pose = createTargetPose(x_position, y_position, pallet_offset + dif_btw_tip_tcp, q1);
+            target_poses.push_back(pose);
+        }
 
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.10");
-        if (!tryAction([&]() { return setGripper(0.10); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(5));
+        std::vector<geometry_msgs::msg::PoseStamped> target_mid_poses;
+        for (int i = 0; i <= 6; ++i) {
+            double x_position = x_targets1 + pallet_height - (i / 2 + 1) * (piece_diameter / 2.0) - (i / 2) * (piece_diameter / 2.0) - (i / 2) * dist_btw_objects;
+            double y_position = y_targets1 - (i % 2 + 1) * (piece_diameter / 2.0) - (i % 2) * (piece_diameter / 2.0) - (i % 2) * dist_btw_objects;
+            geometry_msgs::msg::PoseStamped pose = createTargetPose(x_position, y_position, pallet_offset + dif_btw_tip_tcp + 0.1, q1); // 10cm above the target
+            target_mid_poses.push_back(pose);
+        }
 
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.20");
-        if (!tryAction([&]() { return setGripper(0.20); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.30");
-        if (!tryAction([&]() { return setGripper(0.30); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.40");
-        if (!tryAction([&]() { return setGripper(0.40); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.50");
-        if (!tryAction([&]() { return setGripper(0.50); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.60");
-        if (!tryAction([&]() { return setGripper(0.60); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.70");
-        if (!tryAction([&]() { return setGripper(0.70); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        /* // start tasks
-        RCLCPP_INFO(this->get_logger(), "adding the cylinder object");
-        if (!tryAction([&]() { 
-            return addCollisionObject("cylinder_object1", shape_msgs::msg::SolidPrimitive::CYLINDER, {0.015, 0.025/2.0}, {0.37, 0.32, 0.008}, createColor(0.8, 0.2, 0.2, 1.0));
-        }, "addCollisionObject(cylinder_object1)")) return;
+        // start tasks
+        for (int i = 0; i < num_objects; ++i) {
+            std::string object_name = "cylinder_object" + std::to_string(i+1);
+            RCLCPP_INFO(this->get_logger(), "Adding the %s", object_name.c_str());
+            if (!tryAction([&]() { 
+                return addCollisionObject(
+                    object_name, 
+                    shape_msgs::msg::SolidPrimitive::CYLINDER, 
+                    {0.015, 0.025 / 2.0}, 
+                    {x_objects1, y_objects1 + (i + 1) * (piece_diameter / 2.0) + i * (piece_diameter / 2.0) + i * dist_btw_objects, piece_height / 2.0}, 
+                    createColor(0.8, 0.2, 0.2, 1.0)
+                );
+            }, "addCollisionObject(" + object_name + ")")) return;
+        }
         std::this_thread::sleep_for(std::chrono::seconds(1));
         
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.35");
-        if (!tryAction([&]() { return setGripper(0.35); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        
-        RCLCPP_INFO(this->get_logger(), "moving robot to target position with shoulder constrain");
-        if (!tryAction([&]() { return moveTo(target_pose_1, add_constrain = true, precise_motion = false); }, "moveTo")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        for (int i = 1; i <= 12; ++i) {
+            RCLCPP_INFO(this->get_logger(), "setting gripper to 0.5");
+            if (!tryAction([&]() { return setGripper(0.5); }, "setGripper")) return;
+            //std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        RCLCPP_INFO(this->get_logger(), "moving to target linearly");
-        if (!tryAction([&]() { return moveLinear(target_pose_2); }, "moveLinear")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        
-        RCLCPP_INFO(this->get_logger(), "allowing collisions with the cylinder object");
-        if (!tryAction([&]() { return allowCollision("hand", "cylinder_object1"); }, "allowCollision(hand, cylinder_object1)")) return;
-        if (!tryAction([&]() { return allowCollision("surface", "cylinder_object1"); }, "allowCollision(surface, cylinder_object1)")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+            RCLCPP_INFO(this->get_logger(), "moving robot to objects position with shoulder constrain");
+            if (!tryAction([&]() { return moveTo(object_poses[0], add_constrain = true, precise_motion = false); }, "moveTo")) return;
+            //std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        RCLCPP_INFO(this->get_logger(), "moving to target linearly");
-        if (!tryAction([&]() { return moveLinear(target_pose_3); }, "moveLinear")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+            RCLCPP_INFO(this->get_logger(), "moving to objects linearly");
+            if (!tryAction([&]() { return moveLinear(object_poses[0]); }, "moveLinear")) return;
+            //std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        if (!tryAction([&]() { return allowCollision("hand", "surface"); }, "allowCollision(hand, cylinder_object1)")) return;
+            RCLCPP_INFO(this->get_logger(), "allowing collisions with the cylinder object");
+            std::string object_name = "cylinder_object" + std::to_string(i);
+            if (!tryAction([&]() { return allowCollision("hand", object_name); }, "allowCollision(hand, " + object_name + ")")) return;
+            if (!tryAction([&]() { return allowCollision("surface", object_name); }, "allowCollision(surface, " + object_name + ")")) return;
+            //std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.40");
-        if (!tryAction([&]() { return setGripper(0.40); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+            RCLCPP_INFO(this->get_logger(), "moving to above object linearly");
+            if (!tryAction([&]() { return moveLinear(object_mid_poses[i-1]); }, "moveLinear")) return;
+            //std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        RCLCPP_INFO(this->get_logger(), "moving to target linearly");
-        if (!tryAction([&]() { return moveLinear(target_pose_5); }, "moveLinear")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+            if (!tryAction([&]() { return allowCollision("hand", "surface"); }, "allowCollision(hand, surface)")) return;
 
-        RCLCPP_INFO(this->get_logger(), "attaching the cylinder object to the gripper");
-        if (!tryAction([&]() { return attachObject("cylinder_object1"); }, "attachObject(cylinder_object1)")) return;
+            RCLCPP_INFO(this->get_logger(), "setting gripper to 0.55");
+            if (!tryAction([&]() { return setGripper(0.55); }, "setGripper")) return;
+            //std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.70");
-        if (!tryAction([&]() { return setGripper(0.70); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        
-        RCLCPP_INFO(this->get_logger(), "moving to target linearly");
-        if (!tryAction([&]() { return moveLinear(target_pose_3); }, "moveLinear")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+            RCLCPP_INFO(this->get_logger(), "moving to object linearly");
+            if (!tryAction([&]() { return moveLinear(object_poses[i]); }, "moveLinear")) return;
+            //std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        if (!tryAction([&]() { return reenableCollision("hand", "surface"); }, "allowCollision(hand, cylinder_object1)")) return;
+            RCLCPP_INFO(this->get_logger(), "attaching the cylinder object to the gripper");
+            if (!tryAction([&]() { return attachObject(object_name); }, "attachObject(" + object_name + ")")) return;
 
-        RCLCPP_INFO(this->get_logger(), "moving robot to target position with shoulder constrain");
-        if (!tryAction([&]() { return moveTo(target_pose_6, add_constrain = true, precise_motion = false); }, "moveTo")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+            RCLCPP_INFO(this->get_logger(), "setting gripper to 0.70");
+            if (!tryAction([&]() { return setGripper(0.70); }, "setGripper")) return;
+            //std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        RCLCPP_INFO(this->get_logger(), "setting gripper to 0.00");
-        if (!tryAction([&]() { return setGripper(0.00); }, "setGripper")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+            RCLCPP_INFO(this->get_logger(), "back to above object linearly");
+            if (!tryAction([&]() { return moveLinear(object_mid_poses[i-1]); }, "moveLinear")) return;
+            //std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        RCLCPP_INFO(this->get_logger(), "detaching the cylinder object to the gripper");
-        if (!tryAction([&]() { return detachObject("cylinder_object1"); }, "attachObject(cylinder_object1)")) return; */
+            if (!tryAction([&]() { return reenableCollision("hand", "surface"); }, "reenableCollision(hand, surface)")) return;
 
-        //if (!tryAction([&]() { return checkRobotStatus(); }, "checkRobotStatus")) return;
+            RCLCPP_INFO(this->get_logger(), "moving robot to targets position with shoulder constrain");
+            if (!tryAction([&]() { return moveTo(target_poses[0], add_constrain = true, precise_motion = false); }, "moveTo")) return;
+            //std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        /* if (!moveTo(createTargetPose(0.37, 0.32, 0.008 + 0.20 + 0.1, q1))) return;
-        if (!checkRobotStatus()) return;
+            RCLCPP_INFO(this->get_logger(), "moving to targets linearly");
+            if (!tryAction([&]() { return moveLinear(target_poses[0]); }, "moveLinear")) return;
+            //std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        if (!moveLinear(createTargetPose(0.37, 0.32, 0.20 +0.008, q1))) return;
-        if (!checkRobotStatus()) return;
-        
-        if (!allowCollision("hand", "cylinder_object1")) return;
-        if (!allowCollision("surface", "cylinder_object1")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+            RCLCPP_INFO(this->get_logger(), "moving to above target linearly");
+            if (!tryAction([&]() { return moveLinear(target_mid_poses[i-1]); }, "moveLinear")) return;
+            //std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        if (!setGripper(0.7)) return;
-        if (!checkRobotStatus()) return;
+            if (!tryAction([&]() { return allowCollision("hand", "surface"); }, "allowCollision(hand, surface)")) return;
 
-        if (!attachObject("cylinder_object1")) return;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+            RCLCPP_INFO(this->get_logger(), "moving to target linearly");
+            if (!tryAction([&]() { return moveLinear(target_poses[i]); }, "moveLinear")) return;
+            //std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        if (!moveLinear(createTargetPose(0.37, 0.32, 0.22+0.008+0.1, q1))) return;
-        if (!checkRobotStatus()) return; */
+            RCLCPP_INFO(this->get_logger(), "setting gripper to 0.55");
+            if (!tryAction([&]() { return setGripper(0.55); }, "setGripper")) return;
+            //std::this_thread::sleep_for(std::chrono::seconds(1));
 
-        //if (!moveTo(createTargetPose(0.5, 0.4, 0.3, q1))) return;
-        //if (!checkRobotStatus()) return;
-        //if (!checkRobotStatus()) return;
-        //if (!moveLinear(createTargetPose(0.5, 0.2, 0.3, q1))) return;
-        //if (!checkRobotStatus()) return;
-        //if (!moveLinear(createTargetPose(0.5, 0.2, 0.6, q1))) return;
-        //if (!checkRobotStatus()) return;
-        //if (!allowCollision("hand", "target1")) return;
-        //if (!reenableCollision("target1", "table1")) return;
-        //if (!setGripper()) return;
-        //if (!deleteObject("example_object2")) return;
-        //if (!attachObject()) return;
-        //if (!detachObject()) return;
-        //if (!currentState()) return;
+            RCLCPP_INFO(this->get_logger(), "detaching the cylinder object from the gripper");
+            if (!tryAction([&]() { return detachObject(object_name); }, "detachObject(" + object_name + ")")) return;
+
+            RCLCPP_INFO(this->get_logger(), "finished target");
+            if (!tryAction([&]() { return moveLinear(target_mid_poses[i-1]); }, "moveLinear")) return;
+            //std::this_thread::sleep_for(std::chrono::seconds(1));
+
+            if (!tryAction([&]() { return reenableCollision("hand", "surface"); }, "reenableCollision(hand, surface)")) return;
+        }
 
         RCLCPP_INFO(this->get_logger(), "All actions completed successfully.");
     }
