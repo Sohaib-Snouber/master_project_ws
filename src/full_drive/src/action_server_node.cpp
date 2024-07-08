@@ -668,6 +668,10 @@ private:
         return success;
     }
 
+    // be careful when using this action, i would recommend using this in an area free of collisions, and also
+    // be sure that, when the joints state are close to thier limits, and with this motion you may cross the
+    // limits, then you should definetly expecting a collision with robot itself. if i have more time i will
+    // solution for this. 
     bool moveLinear(const geometry_msgs::msg::PoseStamped& target_pose) {
 
         std::vector<geometry_msgs::msg::Pose> waypoints;

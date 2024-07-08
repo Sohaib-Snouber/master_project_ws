@@ -118,7 +118,6 @@ private:
         
         // Create object poses, the output will be like: object_poses = [0,1,2,3,4,5,6,7,8,9,10,11,12], where 0 is the objects poses, and the other ones are the actual poses for every object with its number respectively
         std::vector<geometry_msgs::msg::PoseStamped> object_poses;
-        object_poses.push_back(createTargetPose(x_objects1, y_objects1, 0.5, q1));
         for (int i = 0; i <= num_objects; ++i) {
             double y_position = y_objects1 + (i + 1) * (piece_diameter / 2.0) + i * (piece_diameter / 2.0) + i * dist_btw_objects;
             geometry_msgs::msg::PoseStamped pose = createTargetPose(x_objects1, y_position, (2 * piece_height / 3) - robot_base_height + dif_btw_tip_tcp, q1);
@@ -136,7 +135,6 @@ private:
         // the first pallet positions is added now
         // Create target poses
         std::vector<geometry_msgs::msg::PoseStamped> target_poses;
-        target_poses.push_back(createTargetPose(x_targets1, y_targets1, 0.5, q1));
         for (int i = 0; i <= 6; ++i) {
             double x_position = x_targets1 + pallet_height - (i / 2 + 1) * (piece_diameter / 2.0) - (i / 2) * (piece_diameter / 2.0) - (i / 2) * dist_btw_targets; // examples on i/2 > 1/2 = 0, 3/2 = 1
             double y_position = y_targets1 - (i % 2 + 1) * (piece_diameter / 2.0) - (i % 2) * (piece_diameter / 2.0) - (i % 2) * dist_btw_objects;  //examples on i%2 > 1%2 = 1, 2%2 = 0, 0%2 = 0
@@ -168,27 +166,23 @@ private:
         }
         std::this_thread::sleep_for(std::chrono::seconds(1));
         
-        for (int i = 1; i <= 12; ++i) {
+        for (int i = 0; i < 6; ++i) {
             RCLCPP_INFO(this->get_logger(), "setting gripper to 0.5");
             if (!tryAction([&]() { return setGripper(0.5); }, "setGripper")) return;
             //std::this_thread::sleep_for(std::chrono::seconds(1));
 
             RCLCPP_INFO(this->get_logger(), "moving robot to objects position with shoulder constrain");
-            if (!tryAction([&]() { return moveTo(object_poses[0], add_constrain = true, precise_motion = false); }, "moveTo")) return;
+            if (!tryAction([&]() { return moveTo(object_mid_poses[i], add_constrain = true, precise_motion = false); }, "moveTo")) return;
             //std::this_thread::sleep_for(std::chrono::seconds(1));
 
             RCLCPP_INFO(this->get_logger(), "moving to objects linearly");
-            if (!tryAction([&]() { return moveLinear(object_poses[0]); }, "moveLinear")) return;
+            if (!tryAction([&]() { return moveLinear(object_mid_poses[i]); }, "moveLinear")) return;
             //std::this_thread::sleep_for(std::chrono::seconds(1));
 
             RCLCPP_INFO(this->get_logger(), "allowing collisions with the cylinder object");
-            std::string object_name = "cylinder_object" + std::to_string(i);
+            std::string object_name = "cylinder_object" + std::to_string(i+1);
             if (!tryAction([&]() { return allowCollision("hand", object_name); }, "allowCollision(hand, " + object_name + ")")) return;
             if (!tryAction([&]() { return allowCollision("surface", object_name); }, "allowCollision(surface, " + object_name + ")")) return;
-            //std::this_thread::sleep_for(std::chrono::seconds(1));
-
-            RCLCPP_INFO(this->get_logger(), "moving to above object linearly");
-            if (!tryAction([&]() { return moveLinear(object_mid_poses[i-1]); }, "moveLinear")) return;
             //std::this_thread::sleep_for(std::chrono::seconds(1));
 
             if (!tryAction([&]() { return allowCollision("hand", "surface"); }, "allowCollision(hand, surface)")) return;
@@ -209,21 +203,17 @@ private:
             //std::this_thread::sleep_for(std::chrono::seconds(1));
 
             RCLCPP_INFO(this->get_logger(), "back to above object linearly");
-            if (!tryAction([&]() { return moveLinear(object_mid_poses[i-1]); }, "moveLinear")) return;
+            if (!tryAction([&]() { return moveLinear(object_mid_poses[i]); }, "moveLinear")) return;
             //std::this_thread::sleep_for(std::chrono::seconds(1));
 
             if (!tryAction([&]() { return reenableCollision("hand", "surface"); }, "reenableCollision(hand, surface)")) return;
 
             RCLCPP_INFO(this->get_logger(), "moving robot to targets position with shoulder constrain");
-            if (!tryAction([&]() { return moveTo(target_poses[0], add_constrain = true, precise_motion = false); }, "moveTo")) return;
+            if (!tryAction([&]() { return moveTo(target_mid_poses[i], add_constrain = true, precise_motion = false); }, "moveTo")) return;
             //std::this_thread::sleep_for(std::chrono::seconds(1));
 
             RCLCPP_INFO(this->get_logger(), "moving to targets linearly");
-            if (!tryAction([&]() { return moveLinear(target_poses[0]); }, "moveLinear")) return;
-            //std::this_thread::sleep_for(std::chrono::seconds(1));
-
-            RCLCPP_INFO(this->get_logger(), "moving to above target linearly");
-            if (!tryAction([&]() { return moveLinear(target_mid_poses[i-1]); }, "moveLinear")) return;
+            if (!tryAction([&]() { return moveLinear(target_mid_poses[i]); }, "moveLinear")) return;
             //std::this_thread::sleep_for(std::chrono::seconds(1));
 
             if (!tryAction([&]() { return allowCollision("hand", "surface"); }, "allowCollision(hand, surface)")) return;
@@ -240,7 +230,7 @@ private:
             if (!tryAction([&]() { return detachObject(object_name); }, "detachObject(" + object_name + ")")) return;
 
             RCLCPP_INFO(this->get_logger(), "finished target");
-            if (!tryAction([&]() { return moveLinear(target_mid_poses[i-1]); }, "moveLinear")) return;
+            if (!tryAction([&]() { return moveLinear(target_mid_poses[i]); }, "moveLinear")) return;
             //std::this_thread::sleep_for(std::chrono::seconds(1));
 
             if (!tryAction([&]() { return reenableCollision("hand", "surface"); }, "reenableCollision(hand, surface)")) return;
