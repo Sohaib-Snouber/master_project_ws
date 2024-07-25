@@ -81,7 +81,7 @@ private:
         double robot_base_height = 0.015; // 1,5 cm is the hieght of the base of the real robot, that it is not configured in rviz 
         double dif_btw_tip_tcp = 0.24; // 22cm the distacne between the tip of the gripper and the TCP point of the wrist3_link (the planning target will get to that link point)
         double dist_btw_objects = 0.005; //0.5 cm distance between the objects, that will be grasped
-        double dist_btw_targets = 0.01; // distannce between vertical targets 
+        double dist_btw_targets = 0.015; // distannce between vertical targets 
         double gripper_finger_width = 0.005; // the gripper finger width is 0.5 cm
         double num_objects = 12; // this will make like counter of the number of objects that have been grasped
         double pallet_width = 0.06;  // 6cm the width of tha pallet, that the objects are going to be placed on.

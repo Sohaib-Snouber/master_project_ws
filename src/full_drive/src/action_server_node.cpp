@@ -35,10 +35,12 @@
 #include <moveit/task_constructor/task.h>
 #include <moveit/task_constructor/stages/modify_planning_scene.h>
 #include <moveit/task_constructor/container.h>
-#include <moveit/task_constructor/stage.h>
+#include <moveit/task_constructor/stages.h>
 #include <moveit/task_constructor/introspection.h>
 #include <moveit/task_constructor/stages/current_state.h>
 
+#include <moveit/task_constructor/solvers.h>
+#include <moveit/robot_trajectory/robot_trajectory.h>
 
 #if __cplusplus < 201703L  // If the C++ version is less than C++17, define clamp
 template <typename T>
@@ -636,10 +638,12 @@ private:
     }
 
     bool moveToPose(const geometry_msgs::msg::PoseStamped& target_pose, bool constrain, bool precise_motion) {
-        arm_move_group_->setPoseTarget(target_pose);
-        arm_move_group_->setMaxVelocityScalingFactor(0.1);
-        arm_move_group_->setMaxAccelerationScalingFactor(0.1);
 
+        arm_move_group_->setPlannerId("PTP");
+        arm_move_group_->setPoseTarget(target_pose);
+        arm_move_group_->setMaxVelocityScalingFactor(1.0);
+        arm_move_group_->setMaxAccelerationScalingFactor(1.0);
+        
         moveit_msgs::msg::Constraints path_constraints;
         if (constrain) {
             moveit_msgs::msg::JointConstraint shoulder_constraint;
@@ -664,7 +668,7 @@ private:
             RCLCPP_ERROR(this->get_logger(), "Planning failed");
         }
         arm_move_group_->clearPathConstraints();
-
+        //update_robot_position();
         return success;
     }
 
@@ -690,6 +694,10 @@ private:
         moveit::planning_interface::MoveGroupInterface::Plan my_plan;
         my_plan.trajectory_ = trajectory;
 
+        arm_move_group_->setPlannerId("PTP");
+        arm_move_group_->setMaxVelocityScalingFactor(1.0);
+        arm_move_group_->setMaxAccelerationScalingFactor(1.0);
+
         bool success = (arm_move_group_->execute(my_plan) == moveit::core::MoveItErrorCode::SUCCESS);
         if (success) {
             RCLCPP_INFO(this->get_logger(), "Linear path planning and execution successful");
@@ -697,15 +705,18 @@ private:
         } else {
             RCLCPP_ERROR(this->get_logger(), "Linear path execution failed");
         }
+        //update_robot_position();
         return success;
     }
 
     bool setGripperPosition(double gripper_position) {
         printGripperJointLimits();
+        gripper_move_group_->setPlannerId("PTP");
+        gripper_move_group_->setMaxVelocityScalingFactor(1.0);
+        gripper_move_group_->setMaxAccelerationScalingFactor(1.0);
+        gripper_move_group_->setPlanningTime(10.0);
         gripper_move_group_->setJointValueTarget("finger_joint", gripper_position);
         moveit::planning_interface::MoveGroupInterface::Plan my_plan;
-
-        gripper_move_group_->setPlanningTime(10.0);
 
         bool success = (gripper_move_group_->plan(my_plan) == moveit::core::MoveItErrorCode::SUCCESS);
 
@@ -716,7 +727,83 @@ private:
         } else {
             RCLCPP_ERROR(this->get_logger(), "Planning failed");
         }
+        update_gripper_position();
         return success;
+    }
+
+    bool update_gripper_position() {
+        double gripper_position;
+        try {
+            gripper_position = get_gripper_position();
+            RCLCPP_INFO(this->get_logger(), "UR5e Gripper Position if 1 mean open: %f", gripper_position);
+
+            // Plan and visualize the trajectory for the grippermtc
+            if (!plan_and_visualize_gripper_trajectory(gripper_position)) {
+                return false;
+            }
+
+        } catch (const std::exception& e) {
+            RCLCPP_ERROR(this->get_logger(), "Failed to get gripper position: %s", e.what());
+            return false;
+        }
+
+        return true;
+    }
+
+    double get_gripper_position() {
+        auto gripper_status = gripper_->getCurrentPosition();
+        double position = gripper_status; // Normalize position between 0 and 1
+        RCLCPP_INFO(this->get_logger(), "Real Gripper Position: %f", position);
+        return position;
+    }
+
+    bool plan_and_visualize_gripper_trajectory(double gripper_position) {
+        double finger_joint_position = map_gripper_to_finger_joint(gripper_position);
+        // Load robot model
+        auto robot_model_loader = std::make_shared<robot_model_loader::RobotModelLoader>(shared_from_this(), "robot_description");
+        auto kinematic_model = robot_model_loader->getModel();
+        auto kinematic_state = std::make_shared<moveit::core::RobotState>(kinematic_model);
+        kinematic_state->setToDefaultValues();
+
+        // Set current state for the gripper
+        const moveit::core::JointModelGroup* gripper_joint_model_group = kinematic_model->getJointModelGroup("gripper");
+        std::vector<double> gripper_joint_positions(gripper_joint_model_group->getVariableCount(), finger_joint_position);
+        RCLCPP_INFO(this->get_logger(), "RViz Gripper Position: %f", gripper_joint_positions[0]);
+        kinematic_state->setJointGroupPositions(gripper_joint_model_group, gripper_joint_positions);
+
+        // Validate initial state
+        if (!kinematic_state->satisfiesBounds()) {
+            RCLCPP_ERROR(this->get_logger(), "Initial state is out of bounds");
+            return false;
+        }
+
+        // Set the current state to the one just calculated
+        gripper_move_group_->setPlannerId("PTP");
+        gripper_move_group_->setMaxVelocityScalingFactor(1.0);
+        gripper_move_group_->setMaxAccelerationScalingFactor(1.0);
+        gripper_move_group_->setPlanningTime(10.0);
+        gripper_move_group_->setJointValueTarget(gripper_joint_positions);
+
+        // Plan a trajectory for the gripper
+        moveit::planning_interface::MoveGroupInterface::Plan gripper_plan;
+        bool gripper_success = (gripper_move_group_->plan(gripper_plan) == moveit::core::MoveItErrorCode::SUCCESS);
+
+        if (gripper_success) {
+            RCLCPP_INFO(this->get_logger(), "Planning successful. Executing the plan.");
+            gripper_move_group_->execute(gripper_plan);
+            return true;
+        } else {
+            RCLCPP_ERROR(this->get_logger(), "Planning failed!");
+            return false;
+        }
+    }
+
+    double map_gripper_to_finger_joint(double gripper_position) {
+        double close_finger_joint = 0.7; //0.69991196175
+        double open_finger_joint = 0.0; //0.07397215645645
+        double mapped_position = map_value(gripper_position, 1, 0, open_finger_joint, close_finger_joint); // 0.988235, 0.105882
+        RCLCPP_INFO(this->get_logger(), "Mapped Finger Joint Position: %f", mapped_position);
+        return mapped_position;
     }
 
     void printGripperJointLimits() {
@@ -816,38 +903,19 @@ private:
                 joint_positions.push_back(joint.position);
             }
 
+            joint_positions.push_back(1.0);
+            joint_positions.push_back(1.0);
             if(task_details.precise_motion == true){
-                if (task_details.group_name == "ur5e_arm"){               
-                    rtde_control_->moveJ(joint_positions, 1.0, 1.0, false);
-
-                } else if (task_details.group_name == "gripper") {
-                    if (!task_details.waypoints.front().joints.empty()) {
-                        initial_gripper_position = task_details.waypoints.front().joints.back().position;
-                    }
-                    if (!task_details.waypoints.back().joints.empty()) {
-                        final_gripper_position = task_details.waypoints.back().joints.back().position;
-                    }
-
-                    RCLCPP_INFO(this->get_logger(), "Initial gripper position: %f, Final gripper position: %f", initial_gripper_position, final_gripper_position);
-
-                    if (abs(abs(initial_gripper_position) - abs(final_gripper_position)) > finger_change) {
-                        RCLCPP_INFO(this->get_logger(), "Moving gripper to position: %f", final_gripper_position);
-                        final_gripper_position = map_finger_joint_to_gripper(final_gripper_position);
-                        final_gripper_position = std::clamp(final_gripper_position, 0.0, 1.0);
-                        gripper_->move(final_gripper_position);
-                        RCLCPP_INFO(this->get_logger(), "Gripper moved to position: %f", final_gripper_position);
-                        break;
-                    }
-                }
+                joint_positions.push_back(0.001); // Tolerance or blend
+            
+            } else if(task_details.precise_motion == false){
+                joint_positions.push_back(0.05); // Tolerance or blend
+            
             }
-            joint_positions.push_back(1.0);
-            joint_positions.push_back(1.0);
-            joint_positions.push_back(0.05); // Tolerance or some other parameter
-
+            
             robot_path.push_back(joint_positions);
 
         }
-        if(task_details.precise_motion == false){
             if (task_details.group_name == "ur5e_arm"){               
                 rtde_control_->moveJ(robot_path, false);
 

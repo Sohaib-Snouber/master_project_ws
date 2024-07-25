@@ -13,7 +13,7 @@ def generate_launch_description():
         .robot_description(file_path="config/ur5e_robot.urdf.xacro")
         .trajectory_execution(file_path="config/moveit_controllers.yaml")
         .planning_pipelines(
-            pipelines=["ompl", "chomp", "pilz_industrial_motion_planner"]
+            pipelines=["pilz_industrial_motion_planner"]
         )
         .to_moveit_configs()
     )

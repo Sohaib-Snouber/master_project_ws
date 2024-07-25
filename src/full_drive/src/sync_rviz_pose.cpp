@@ -135,6 +135,8 @@ private:
         // Create MoveGroupInterface for the arm
         moveit::planning_interface::MoveGroupInterface arm_move_group_interface(shared_from_this(), "ur5e_arm");
 
+        arm_move_group_interface.setPlannerId("PTP");  // Change "PTP" to the desired planner if needed
+
         // Set the current state to the one just calculated
         arm_move_group_interface.setJointValueTarget(joint_positions);
 
@@ -181,6 +183,8 @@ private:
 
         // Create MoveGroupInterface for the gripper
         moveit::planning_interface::MoveGroupInterface gripper_move_group_interface(shared_from_this(), "gripper");
+
+        gripper_move_group_interface.setPlannerId("PTP");  // Change "PTP" to the desired planner if needed
 
         // Set the current state to the one just calculated
         gripper_move_group_interface.setJointValueTarget(gripper_joint_positions);
