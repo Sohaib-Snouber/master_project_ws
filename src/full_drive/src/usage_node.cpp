@@ -8,20 +8,50 @@
 #include <functional>
 #include <Eigen/Dense>
 
+#include <ur_rtde/rtde_control_interface.h>
+#include <ur_rtde/rtde_receive_interface.h>
+#include <ur_rtde/robotiq_gripper.h>
+#include "master_project_msgs/msg/move_group_action_details.hpp" 
+#include "master_project_msgs/msg/move_group_waypoint.hpp"
+#include "master_project_msgs/msg/move_group_joint_state.hpp"
+
+using namespace ur_rtde;
 
 class ClientNode : public rclcpp::Node {
 public:
     ClientNode(const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
-        : Node("client_node", options), client_actions_(std::make_shared<ClientActions>()) {
+        : Node("client_node", options),ip_("10.130.1.100"), client_actions_(std::make_shared<ClientActions>()) {
+        rtde_control_ = std::make_unique<RTDEControlInterface>(ip_);
+        rtde_receive_ = std::make_unique<RTDEReceiveInterface>(ip_);
+        gripper_ = std::make_unique<RobotiqGripper>(ip_);
+
+        task_details_subscriber_ = this->create_subscription<master_project_msgs::msg::MoveGroupActionDetails>(
+            "task_details", 10, std::bind(&ClientNode::taskDetailsCallback, this, std::placeholders::_1));
+        RCLCPP_INFO(this->get_logger(), "Connecting to gripper...");
+        gripper_->connect();
+        RCLCPP_INFO(this->get_logger(), "Gripper connected.");
+        gripper_->activate();
+        RCLCPP_INFO(this->get_logger(), "Gripper activated.");
+
         // Fit the polynomial coefficients once during initialization
         fitPolynomialCoefficients();
         executeActions();
     }
 
 private:
+    rclcpp::Subscription<master_project_msgs::msg::MoveGroupActionDetails>::SharedPtr task_details_subscriber_;
     std::shared_ptr<ClientActions> client_actions_;
-    const int max_attempts = 5;
+    const int max_attempts = 50;
     Eigen::VectorXd coeffs;
+    std::string ip_;
+    std::unique_ptr<RTDEControlInterface> rtde_control_;
+    std::unique_ptr<RTDEReceiveInterface> rtde_receive_;
+    std::unique_ptr<RobotiqGripper> gripper_;
+
+    void taskDetailsCallback(const master_project_msgs::msg::MoveGroupActionDetails::SharedPtr msg) {  // Change the message type
+        RCLCPP_INFO(this->get_logger(), "Received task details: %s", msg->action_name.c_str());
+        processTask(*msg);
+    }
 
     void fitPolynomialCoefficients() {
         // Provided data points
@@ -165,14 +195,23 @@ private:
             }, "addCollisionObject(" + object_name + ")")) return;
         }
         std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        RCLCPP_INFO(this->get_logger(), "moving robot to objects position with shoulder constrain");
+        if (!tryAction([&]() { return moveTo(object_mid_poses[1], add_constrain = true, precise_motion = true); }, "moveTo")) return;
+        //std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        RCLCPP_INFO(this->get_logger(), "moving robot to objects position with shoulder constrain");
+        if (!tryAction([&]() { return moveTo(target_mid_poses[1], add_constrain = true, precise_motion = true); }, "moveTo")) return;
+        //std::this_thread::sleep_for(std::chrono::seconds(1));
+
         
-        for (int i = 0; i < 6; ++i) {
+/*         for (int i = 0; i < 6; ++i) {
             RCLCPP_INFO(this->get_logger(), "setting gripper to 0.5");
             if (!tryAction([&]() { return setGripper(0.5); }, "setGripper")) return;
             //std::this_thread::sleep_for(std::chrono::seconds(1));
 
             RCLCPP_INFO(this->get_logger(), "moving robot to objects position with shoulder constrain");
-            if (!tryAction([&]() { return moveTo(object_mid_poses[i], add_constrain = true, precise_motion = false); }, "moveTo")) return;
+            if (!tryAction([&]() { return moveTo(object_mid_poses[i], add_constrain = true, precise_motion = true); }, "moveTo")) return;
             //std::this_thread::sleep_for(std::chrono::seconds(1));
 
             RCLCPP_INFO(this->get_logger(), "moving to objects linearly");
@@ -226,6 +265,10 @@ private:
             if (!tryAction([&]() { return setGripper(0.55); }, "setGripper")) return;
             //std::this_thread::sleep_for(std::chrono::seconds(1));
 
+            RCLCPP_INFO(this->get_logger(), "updating rviz gripper");
+            if (!tryAction([&]() { return updateGripper(get_gripper_position()); }, "updateGripper")) return;
+            //std::this_thread::sleep_for(std::chrono::seconds(1));
+
             RCLCPP_INFO(this->get_logger(), "detaching the cylinder object from the gripper");
             if (!tryAction([&]() { return detachObject(object_name); }, "detachObject(" + object_name + ")")) return;
 
@@ -234,10 +277,125 @@ private:
             //std::this_thread::sleep_for(std::chrono::seconds(1));
 
             if (!tryAction([&]() { return reenableCollision("hand", "surface"); }, "reenableCollision(hand, surface)")) return;
-        }
+        } */
 
         RCLCPP_INFO(this->get_logger(), "All actions completed successfully.");
     }
+
+    std_msgs::msg::ColorRGBA createColor(float r, float g, float b, float a) {
+        std_msgs::msg::ColorRGBA color;
+        color.r = r;
+        color.g = g;
+        color.b = b;
+        color.a = a;
+        return color;
+    }
+    geometry_msgs::msg::PoseStamped createTargetPose(double px, double py, double pz, const tf2::Quaternion& q) {
+        geometry_msgs::msg::PoseStamped target_pose;
+        target_pose.header.stamp = this->now();
+        target_pose.header.frame_id = "world";
+        target_pose.pose.position.x = px;
+        target_pose.pose.position.y = py;
+        target_pose.pose.position.z = pz;
+        target_pose.pose.orientation = tf2::toMsg(q);
+        return target_pose;
+    }
+
+    double get_gripper_position() {
+        auto gripper_status = gripper_->getCurrentPosition();
+        double position = gripper_status; // Normalize position between 0 and 1
+        RCLCPP_INFO(this->get_logger(), "Real Gripper Position: %f", position);
+        return position;
+    }
+
+    void processTask(const master_project_msgs::msg::MoveGroupActionDetails& task_details) {
+        std::lock_guard<std::mutex> lock(task_mutex_);  // Lock the mutex at the beginning
+        RCLCPP_INFO(this->get_logger(), "Processing task for group: %s, action: %s", task_details.group_name.c_str(), task_details.action_name.c_str());
+
+        std::vector<std::vector<double>> robot_path;
+        double initial_gripper_position = -1;
+        double final_gripper_position = -1;
+        double finger_change = 0.005;
+
+        // Check if waypoints are empty
+        if (task_details.waypoints.empty()) {
+            RCLCPP_ERROR(this->get_logger(), "No waypoints to process.");
+            return;
+        }
+
+        for (const auto& waypoint : task_details.waypoints) {
+            std::vector<double> joint_positions;
+
+            // Log the number of joints in the waypoint
+            RCLCPP_INFO(this->get_logger(), "Processing waypoint with %zu joints", waypoint.joints.size());
+
+            for (const auto& joint : waypoint.joints) {
+                RCLCPP_INFO(this->get_logger(), "Joint name: %s, position: %f", joint.name.c_str(), joint.position);
+                joint_positions.push_back(joint.position);
+            }
+
+            joint_positions.push_back(waypoint.speed);
+            joint_positions.push_back(waypoint.acceleration);
+            if(task_details.precise_motion == true){
+                joint_positions.push_back(0.001); // Tolerance or blend
+            
+            } else if(task_details.precise_motion == false){
+                joint_positions.push_back(0.02); // Tolerance or blend
+            
+            }
+            robot_path.push_back(joint_positions);
+        }
+
+        if (task_details.group_name == "ur5e_arm"){               
+            rtde_control_->moveJ(robot_path);
+
+        } else if (task_details.group_name == "gripper") {
+            if (!task_details.waypoints.front().joints.empty()) {
+                initial_gripper_position = task_details.waypoints.front().joints.back().position;
+            }
+            if (!task_details.waypoints.back().joints.empty()) {
+                final_gripper_position = task_details.waypoints.back().joints.back().position;
+            }
+
+            RCLCPP_INFO(this->get_logger(), "Initial gripper position: %f, Final gripper position: %f", initial_gripper_position, final_gripper_position);
+
+            if (abs(abs(initial_gripper_position) - abs(final_gripper_position)) > finger_change) {
+                RCLCPP_INFO(this->get_logger(), "Moving gripper to position: %f", final_gripper_position);
+                final_gripper_position = map_finger_joint_to_gripper(final_gripper_position);
+                final_gripper_position = std::clamp(final_gripper_position, 0.0, 1.0);
+                gripper_->move(final_gripper_position);
+                RCLCPP_INFO(this->get_logger(), "Gripper moved to position: %f", final_gripper_position);
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        // Keep checking if the robot is busy
+        RCLCPP_INFO(this->get_logger(), "Checking if the robot is busy...");
+        while (isRobotBusy()) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            RCLCPP_INFO(this->get_logger(), "Robot is still busy, sleeping 1 second");
+        }
+        RCLCPP_INFO(this->get_logger(), "Robot is now idle. Task processing completed.");
+    }
+
+    double map_finger_joint_to_gripper(double finger_joint_position) {
+        double close_finger_joint = 0.69991196175;
+        double open_finger_joint = 0.07397215645645;
+        return map_value(finger_joint_position, open_finger_joint, close_finger_joint, 0.988235, 0.105882);
+    }
+
+    double map_value(double value, double fromLow, double fromHigh, double toLow, double toHigh) {
+        return (value - fromLow) * (toHigh - toLow) / (fromHigh - fromLow) + toLow;
+    }
+
+        float setGripperInCm(float cm) {
+        float value = polynomialRegression(cm);
+        RCLCPP_INFO(this->get_logger(), "Converted gripper width %f cm to value %f", cm, value);
+        return value;
+    }
+
+    //////////////////////////////////////////////////////////////////////////////////
+    ///////// Actions ////////////////////////////////////////////////////////////////
+    ///////// vvvvvvv ////////////////////////////////////////////////////////////////
 
     bool addCollisionObject(const std::string &name, uint8_t shape_type, const std::vector<double> &dimensions, const std::vector<double> &position, const std_msgs::msg::ColorRGBA &color) {
         shape_msgs::msg::SolidPrimitive primitive;
@@ -252,7 +410,7 @@ private:
 
         return client_actions_->addCollisionObject(name, primitive, pose, color);
     }
-    // need modifiying
+
     bool deleteObject(const std::string &name) {
         return client_actions_->deleteObject(name);
     }
@@ -291,30 +449,10 @@ private:
         return client_actions_->setGripper(finger_joint_position);
     }
 
-    float setGripperInCm(float cm) {
-        float value = polynomialRegression(cm);
-        RCLCPP_INFO(this->get_logger(), "Converted gripper width %f cm to value %f", cm, value);
-        return value;
+    bool updateGripper(float finger_joint_position) {
+        return client_actions_->updateGripper(finger_joint_position);
     }
 
-    std_msgs::msg::ColorRGBA createColor(float r, float g, float b, float a) {
-        std_msgs::msg::ColorRGBA color;
-        color.r = r;
-        color.g = g;
-        color.b = b;
-        color.a = a;
-        return color;
-    }
-    geometry_msgs::msg::PoseStamped createTargetPose(double px, double py, double pz, const tf2::Quaternion& q) {
-        geometry_msgs::msg::PoseStamped target_pose;
-        target_pose.header.stamp = this->now();
-        target_pose.header.frame_id = "world";
-        target_pose.pose.position.x = px;
-        target_pose.pose.position.y = py;
-        target_pose.pose.position.z = pz;
-        target_pose.pose.orientation = tf2::toMsg(q);
-        return target_pose;
-    }
 };
 
 int main(int argc, char ** argv) {

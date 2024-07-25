@@ -289,6 +289,31 @@ public:
         return sendGoal(goal_msg);
     }
 
+    bool updateGripper(float &gripper_position) {
+        if (!this->client_->wait_for_action_server()) {
+            RCLCPP_ERROR(this->get_logger(), "Action server not available after waiting");
+            return false;
+        }
+
+        auto goal_msg = FullDrive::Goal();
+        goal_msg.gripper_position = gripper_position;
+        
+        goal_msg.add_collision_object = false;
+        goal_msg.delete_collision_object = false;
+        goal_msg.attach_object = false;
+        goal_msg.detach_object = false;
+        goal_msg.move_to = false;
+        goal_msg.move_linear = false;
+        goal_msg.check_robot_status = false;
+        goal_msg.allow_collision = false;
+        goal_msg.reenable_collision = false;
+        goal_msg.current_state = false;
+        goal_msg.set_gripper_position = false;
+        goal_msg.update_gripper_position = true;
+
+        return sendGoal(goal_msg);
+    }
+
 private:
     rclcpp_action::Client<FullDrive>::SharedPtr client_;
 

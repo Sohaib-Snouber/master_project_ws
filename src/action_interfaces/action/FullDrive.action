@@ -17,6 +17,7 @@ bool allow_collision
 bool reenable_collision
 bool current_state
 bool set_gripper_position
+bool update_gripper_position  # this action needed when grasping objects in real life, and the gripper position in rviz should be the same as the real robot
 
 float64 gripper_position
 string object_name

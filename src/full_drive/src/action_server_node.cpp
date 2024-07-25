@@ -2,9 +2,6 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include "action_interfaces/action/full_drive.hpp"
 #include "full_drive/update_planning_scene.h"
-#include <ur_rtde/rtde_control_interface.h>
-#include <ur_rtde/rtde_receive_interface.h>
-#include <ur_rtde/robotiq_gripper.h>
 #include <thread>
 #include <chrono>
 #include <random>
@@ -12,7 +9,6 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#include "master_project_msgs/msg/move_group_action_details.hpp"
 #include <mutex>
 
 #include <moveit/move_group_interface/move_group_interface.h>
@@ -22,7 +18,7 @@
 #include <moveit_msgs/msg/attached_collision_object.hpp>
 #include <moveit_msgs/msg/planning_scene.hpp>
 #include <moveit_msgs/msg/collision_object.hpp>
-#include "master_project_msgs/msg/move_group_action_details.hpp"  // Replace with actual package name
+#include "master_project_msgs/msg/move_group_action_details.hpp"
 #include "master_project_msgs/msg/move_group_waypoint.hpp"
 #include "master_project_msgs/msg/move_group_joint_state.hpp"
 #include <moveit/robot_state/robot_state.h>
@@ -42,13 +38,6 @@
 #include <moveit/task_constructor/solvers.h>
 #include <moveit/robot_trajectory/robot_trajectory.h>
 
-#if __cplusplus < 201703L  // If the C++ version is less than C++17, define clamp
-template <typename T>
-const T& clamp(const T& v, const T& lo, const T& hi) {
-    return (v < lo) ? lo : (hi < v) ? hi : v;
-}
-#endif
-
 using namespace ur_rtde;
 using FullDrive = action_interfaces::action::FullDrive;
 using GoalHandleFullDrive = rclcpp_action::ServerGoalHandle<FullDrive>;
@@ -63,7 +52,7 @@ struct ObjectProperties {
 class FullDriveActionServer : public rclcpp::Node {
 public:
     FullDriveActionServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
-        : Node("full_drive_action_server", options), ip_("10.130.1.100"),
+        : Node("full_drive_action_server", options),
         planning_scene_interface_(std::make_shared<moveit::planning_interface::PlanningSceneInterface>()){
         this->action_server_ = rclcpp_action::create_server<FullDrive>(
             this,
@@ -72,19 +61,7 @@ public:
             std::bind(&FullDriveActionServer::handle_cancel, this, std::placeholders::_1),
             std::bind(&FullDriveActionServer::handle_accepted, this, std::placeholders::_1));
 
-        rtde_control_ = std::make_unique<RTDEControlInterface>(ip_);
-        rtde_receive_ = std::make_unique<RTDEReceiveInterface>(ip_);
-        gripper_ = std::make_unique<RobotiqGripper>(ip_);
-
-        task_details_subscriber_ = this->create_subscription<master_project_msgs::msg::MoveGroupActionDetails>(
-            "task_details", 10, std::bind(&FullDriveActionServer::taskDetailsCallback, this, std::placeholders::_1));
         task_details_publisher_ = this->create_publisher<master_project_msgs::msg::MoveGroupActionDetails>("/task_details", 10);
-
-        RCLCPP_INFO(this->get_logger(), "Connecting to gripper...");
-        gripper_->connect();
-        RCLCPP_INFO(this->get_logger(), "Gripper connected.");
-        gripper_->activate();
-        RCLCPP_INFO(this->get_logger(), "Gripper activated.");
 
         // Defer the initialization of shared_from_this()
         auto timer_callback = [this]() {
@@ -111,13 +88,8 @@ public:
     }
 
 private:
-    rclcpp::Subscription<master_project_msgs::msg::MoveGroupActionDetails>::SharedPtr task_details_subscriber_;
     rclcpp::Publisher<master_project_msgs::msg::MoveGroupActionDetails>::SharedPtr task_details_publisher_;
     rclcpp_action::Server<FullDrive>::SharedPtr action_server_;
-    std::string ip_;
-    std::unique_ptr<RTDEControlInterface> rtde_control_;
-    std::unique_ptr<RTDEReceiveInterface> rtde_receive_;
-    std::unique_ptr<RobotiqGripper> gripper_;
     std::shared_ptr<PlanningSceneUpdater> planning_scene_updater_;
 
     // Map to store objects and their properties
@@ -172,27 +144,6 @@ private:
         wall4_pose.position.z = 0.25;
         moveit_msgs::msg::CollisionObject collision_object_wall4 = createCollisionObject("wall4", primitive_wall4, wall4_pose);
 
-        /* shape_msgs::msg::SolidPrimitive primitive_table2;
-        primitive_table2.type = primitive_table2.BOX;
-        primitive_table2.dimensions = {0.6, 0.9, 0.2};
-        geometry_msgs::msg::Pose table2_pose;
-        table2_pose.orientation.w = 1.0;
-        table2_pose.position.x = -0.60;
-        table2_pose.position.y = 0.0;
-        table2_pose.position.z = 0.1;
-        moveit_msgs::msg::CollisionObject collision_object_table2 = createCollisionObject("table2", primitive_table2, table2_pose); */
-
-
-        /* shape_msgs::msg::SolidPrimitive primitive_target1;
-        primitive_target1.type = primitive_target1.CYLINDER;
-        primitive_target1.dimensions = {0.1, 0.02}; // height, radius
-        geometry_msgs::msg::Pose target1_pose;
-        target1_pose.orientation.w = 1.0;
-        target1_pose.position.x = 0.45;
-        target1_pose.position.y = -0.35;
-        target1_pose.position.z = 0.25;
-        moveit_msgs::msg::CollisionObject collision_object_target1 = createCollisionObject("target1", primitive_target1, target1_pose);
-        */
         shape_msgs::msg::SolidPrimitive primitive_surface;
         primitive_surface.type = primitive_surface.BOX;
         primitive_surface.dimensions = {0.75, 0.8, 0.1};
@@ -203,24 +154,18 @@ private:
         surface_pose.position.z = -0.05;
         moveit_msgs::msg::CollisionObject collision_object_surface = createCollisionObject("surface", primitive_surface, surface_pose);
 
-        /* // Create object colors
-        moveit_msgs::msg::ObjectColor table1_color = createObjectColor("table1", 1.0, 0.5, 0.5, 1.0);
-        moveit_msgs::msg::ObjectColor table2_color = createObjectColor("table2", 1.0, 0.5, 0.5, 1.0);
-        moveit_msgs::msg::ObjectColor target1_color = createObjectColor("target1", 0.5, 0.0, 1.0, 1.0); */
+        // Create object colors
         moveit_msgs::msg::ObjectColor surface_color = createObjectColor("surface", 0.5, 0.5, 0.5, 1.0);
         moveit_msgs::msg::ObjectColor wall1_color = createObjectColor("wall1", 0.1, 0.2, 0.3, 1.0); // -y axis
         moveit_msgs::msg::ObjectColor wall2_color = createObjectColor("wall2", 1.0, 1.0, 1.0, 1.0); // +x axis
         moveit_msgs::msg::ObjectColor wall3_color = createObjectColor("wall3", 1.0, 1.0, 1.0, 1.0); // +y axis
         moveit_msgs::msg::ObjectColor wall4_color = createObjectColor("wall4", 1.0, 1.0, 1.0, 1.0); //- x axis
 
-
         // Create a PlanningScene message and add the collision objects and their colors
         moveit_msgs::msg::PlanningScene planning_scene_msg;
         planning_scene_msg.is_diff = true;
         planning_scene_msg.world.collision_objects = {collision_object_surface, collision_object_wall1,collision_object_wall2,collision_object_wall3,collision_object_wall4};
         planning_scene_msg.object_colors = {surface_color, wall1_color, wall2_color, wall3_color, wall4_color};
-        /* planning_scene_msg.world.collision_objects = {collision_object_table1, collision_object_table2, collision_object_target1, collision_object_surface};
-        planning_scene_msg.object_colors = {table1_color, table2_color, target1_color, surface_color}; */
 
         // Apply the planning scene
         planning_scene_interface_->applyPlanningScene(planning_scene_msg);
@@ -279,11 +224,6 @@ private:
         RCLCPP_INFO(this->get_logger(), "Loaded %zu existing collision objects into object_map_", object_map_.size());
     }
 
-    void taskDetailsCallback(const master_project_msgs::msg::MoveGroupActionDetails::SharedPtr msg) {  // Change the message type
-        RCLCPP_INFO(this->get_logger(), "Received task details: %s", msg->action_name.c_str());
-        processTask(*msg);
-    }
-
     rclcpp_action::GoalResponse handle_goal(
         const rclcpp_action::GoalUUID & uuid,
         std::shared_ptr<const FullDrive::Goal> goal) {
@@ -297,11 +237,11 @@ private:
         std::cout << "detach_object: " << goal->detach_object << std::endl;
         std::cout << "move_to: " << goal->move_to << std::endl;
         std::cout << "move_linear: " << goal->move_linear << std::endl;
-        std::cout << "check_robot_status: " << goal->check_robot_status << std::endl;
         std::cout << "allow_collision: " << goal->allow_collision << std::endl;
         std::cout << "reenable_collision: " << goal->reenable_collision << std::endl;
         std::cout << "current_state: " << goal->current_state << std::endl;
         std::cout << "set_gripper_position: " << goal->set_gripper_position << std::endl;
+        std::cout << "update_gripper_position: " << goal->update_gripper_position << std::endl;
         std::cout << "gripper_position: " << goal->gripper_position << std::endl;
         std::cout << "object_name: " << goal->object_name << std::endl;
         std::cout << "target_name: " << goal->target_name << std::endl;
@@ -395,9 +335,11 @@ private:
             RCLCPP_INFO(this->get_logger(), "Setting gripper to position: %f", goal->gripper_position);
             success = setGripperPosition(goal->gripper_position);
             result->success = success;
-
-        }else if (goal->check_robot_status) {
-            success = checkRobotStatus(goal_handle, result);
+        
+        } else if (goal->update_gripper_position) {
+            RCLCPP_INFO(this->get_logger(), "Setting gripper to position: %f", goal->gripper_position);
+            success = updateGripperPosition(goal->gripper_position);
+            result->success = success;
 
         } else if (goal->allow_collision) {
             if (goal->target_name != "hand" && object_map_.find(goal->target_name) == object_map_.end()) {
@@ -433,21 +375,6 @@ private:
         }
 
         return success;
-    }
-
-    bool checkRobotStatus(const std::shared_ptr<GoalHandleFullDrive> goal_handle, std::shared_ptr<FullDrive::Result> result) {
-        RCLCPP_INFO(this->get_logger(), "Checking robot status...");
-        while (isRobotMoving()) {
-            if (goal_handle->is_canceling()) {
-                goal_handle->canceled(result);
-                RCLCPP_INFO(this->get_logger(), "Goal canceled while checking robot status");
-                return false;
-            }
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-        RCLCPP_INFO(this->get_logger(), "Robot has stopped moving.");
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        return true;
     }
 
     bool allowCollision(const std::string& object1, const std::string& object2, bool allow) {
@@ -710,7 +637,6 @@ private:
     }
 
     bool setGripperPosition(double gripper_position) {
-        printGripperJointLimits();
         gripper_move_group_->setPlannerId("PTP");
         gripper_move_group_->setMaxVelocityScalingFactor(1.0);
         gripper_move_group_->setMaxAccelerationScalingFactor(1.0);
@@ -727,34 +653,15 @@ private:
         } else {
             RCLCPP_ERROR(this->get_logger(), "Planning failed");
         }
-        update_gripper_position();
         return success;
     }
 
-    bool update_gripper_position() {
-        double gripper_position;
-        try {
-            gripper_position = get_gripper_position();
-            RCLCPP_INFO(this->get_logger(), "UR5e Gripper Position if 1 mean open: %f", gripper_position);
-
-            // Plan and visualize the trajectory for the grippermtc
-            if (!plan_and_visualize_gripper_trajectory(gripper_position)) {
-                return false;
-            }
-
-        } catch (const std::exception& e) {
-            RCLCPP_ERROR(this->get_logger(), "Failed to get gripper position: %s", e.what());
+    bool updateGripperPosition(double gripper_position) {
+        // Plan and visualize the trajectory for the gripper
+        if (!plan_and_visualize_gripper_trajectory(gripper_position)) {
             return false;
         }
-
         return true;
-    }
-
-    double get_gripper_position() {
-        auto gripper_status = gripper_->getCurrentPosition();
-        double position = gripper_status; // Normalize position between 0 and 1
-        RCLCPP_INFO(this->get_logger(), "Real Gripper Position: %f", position);
-        return position;
     }
 
     bool plan_and_visualize_gripper_trajectory(double gripper_position) {
@@ -806,12 +713,6 @@ private:
         return mapped_position;
     }
 
-    void printGripperJointLimits() {
-        const moveit::core::JointModel* joint_model = gripper_move_group_->getRobotModel()->getJointModel("finger_joint");
-        const moveit::core::VariableBounds& bounds = joint_model->getVariableBounds()[0];
-        RCLCPP_INFO(this->get_logger(), "Finger joint limits: min_position = %f, max_position = %f", bounds.min_position_, bounds.max_position_);
-    }
-
     void publishTaskDetails(const std::string& group_name, const std::string& action_name, const moveit::planning_interface::MoveGroupInterface::Plan& plan, bool precise_motion = true) {
         master_project_msgs::msg::MoveGroupActionDetails action_details_msg;
         master_project_msgs::msg::MoveGroupWaypoint waypoint_msg;
@@ -839,115 +740,6 @@ private:
         task_details_publisher_->publish(action_details_msg);
     }
 
-    bool isRobotMoving() {
-        int checks = 5;
-        double tolerance = 0.4e-4;
-
-        for (int i = 0; i < checks; ++i) {
-            auto target_q = rtde_receive_->getTargetQ();
-            auto actual_q = rtde_receive_->getActualQ();
-
-            RCLCPP_INFO(this->get_logger(), "Check %d - Target Q: ", i + 1);
-            for (const auto &q : target_q) {
-                RCLCPP_INFO(this->get_logger(), "%f ", q);
-            }
-            RCLCPP_INFO(this->get_logger(), "Actual Q: ");
-            for (const auto &q : actual_q) {
-                RCLCPP_INFO(this->get_logger(), "%f ", q);
-            }
-
-            bool moving = false;
-            for (size_t j = 0; j < target_q.size(); ++j) {
-                double diff = target_q[j] - actual_q[j];
-                if (std::fabs(diff) > tolerance) {
-                    RCLCPP_INFO(this->get_logger(), "difference is %f ", diff);
-                    RCLCPP_INFO(this->get_logger(), "the defined tolerance is %f ", tolerance);
-                    RCLCPP_INFO(this->get_logger(), "Robot is moving");
-                    moving = true;
-                    break;
-                }
-            }
-
-            if (!moving) {
-                RCLCPP_INFO(this->get_logger(), "Robot is not moving");
-            } else {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    void processTask(const master_project_msgs::msg::MoveGroupActionDetails& task_details) {
-        std::lock_guard<std::mutex> lock(task_mutex_);  // Lock the mutex at the beginning
-        RCLCPP_INFO(this->get_logger(), "Processing task for group: %s, action: %s", task_details.group_name.c_str(), task_details.action_name.c_str());
-
-        std::vector<std::vector<double>> robot_path;
-        double initial_gripper_position = -1;
-        double final_gripper_position = -1;
-        double finger_change = 0.005;
-
-        // Check if waypoints are empty
-        if (task_details.waypoints.empty()) {
-            RCLCPP_ERROR(this->get_logger(), "No waypoints to process.");
-            return;
-        }
-
-        for (const auto& waypoint : task_details.waypoints) {
-            std::vector<double> joint_positions;
-
-            // Log the number of joints in the waypoint
-            RCLCPP_INFO(this->get_logger(), "Processing waypoint with %zu joints", waypoint.joints.size());
-
-            for (const auto& joint : waypoint.joints) {
-                RCLCPP_INFO(this->get_logger(), "Joint name: %s, position: %f", joint.name.c_str(), joint.position);
-                joint_positions.push_back(joint.position);
-            }
-
-            joint_positions.push_back(1.0);
-            joint_positions.push_back(1.0);
-            if(task_details.precise_motion == true){
-                joint_positions.push_back(0.001); // Tolerance or blend
-            
-            } else if(task_details.precise_motion == false){
-                joint_positions.push_back(0.05); // Tolerance or blend
-            
-            }
-            
-            robot_path.push_back(joint_positions);
-
-        }
-            if (task_details.group_name == "ur5e_arm"){               
-                rtde_control_->moveJ(robot_path, false);
-
-            } else if (task_details.group_name == "gripper") {
-                if (!task_details.waypoints.front().joints.empty()) {
-                    initial_gripper_position = task_details.waypoints.front().joints.back().position;
-                }
-                if (!task_details.waypoints.back().joints.empty()) {
-                    final_gripper_position = task_details.waypoints.back().joints.back().position;
-                }
-
-                RCLCPP_INFO(this->get_logger(), "Initial gripper position: %f, Final gripper position: %f", initial_gripper_position, final_gripper_position);
-
-                if (abs(abs(initial_gripper_position) - abs(final_gripper_position)) > finger_change) {
-                    RCLCPP_INFO(this->get_logger(), "Moving gripper to position: %f", final_gripper_position);
-                    final_gripper_position = map_finger_joint_to_gripper(final_gripper_position);
-                    final_gripper_position = std::clamp(final_gripper_position, 0.0, 1.0);
-                    gripper_->move(final_gripper_position);
-                    RCLCPP_INFO(this->get_logger(), "Gripper moved to position: %f", final_gripper_position);
-                }
-            }
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        // Keep checking if the robot is busy
-        RCLCPP_INFO(this->get_logger(), "Checking if the robot is busy...");
-        while (isRobotBusy()) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-            RCLCPP_INFO(this->get_logger(), "Robot is still busy, sleeping 1 second");
-        }
-        RCLCPP_INFO(this->get_logger(), "Robot is now idle. Task processing completed.");
-    }
-
     bool isRobotBusy() {
         // Check if the robot is steady
         bool steady = rtde_control_->isSteady();
@@ -959,12 +751,6 @@ private:
         return (value - fromLow) * (toHigh - toLow) / (fromHigh - fromLow) + toLow;
     }
 
-    double map_finger_joint_to_gripper(double finger_joint_position) {
-        double close_finger_joint = 0.69991196175;
-        double open_finger_joint = 0.07397215645645;
-        return map_value(finger_joint_position, open_finger_joint, close_finger_joint, 0.988235, 0.105882);
-    }
-    
 };
 
 int main(int argc, char **argv) {
